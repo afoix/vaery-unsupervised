@@ -9,6 +9,7 @@ https://github.com/glencoesoftware/bioformats2raw?tab=readme-ov-file#usage
 """
 #%%
 from iohub import open_ome_zarr
+from iohub.ngff.utils import create_empty_plate
 from tifffile import tifffile
 import numpy as np
 from typing import Union, List
@@ -84,32 +85,28 @@ def collect_nii_files(directory_path: Union[Path, str]) -> List:
 
 
 #%%
-from iohub.ngff.utils import create_empty_plate
+output_zarr_store = Path('/mnt/data0/home/jnc2161/mbl/registered_salamander_data.zarr') # output zarr filename
 
-output_zarr_store = Path('/mnt/data0/home/jnc2161/mbl/registered_salamander_data.zarr')
 
-#TODO: position keys for the HCS dataset format.
-position_keys = [('0','0','0')] #[(0, 0, 0), ...]
 _test_name, test_arr = load_registered(
     Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/21B_registration_template_V3-1_d10_64bins/21B_template_V3-1_d10_64bins_Pax6.nii.gz")
     )
 
-# What is this
+# stuff for the zarr 
+position_keys = [('0','0','0')] 
 T,C,Z,Y,X = (1, 1, *test_arr.shape) #TODO: get the shape of the array to be converted. (T,C,Z,Y,X)
-#Z,Y,X = test_arr.shape
-print("TCZYX", T,C,Z,Y,X)
 
-#TODO: 
 ### path and label for template and mask
 template_path = Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1/template_V3-1.nii.gz")
 mask_path = Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1/template_V3-1_d3-mask.nii.gz")
 assert template_path.is_file(), f"Template not found at {template_path}"
 assert mask_path.is_file(), f"Mask not found at {mask_path}"
 
+# where all the registered data lives
 path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
-input_files = sorted(collect_nii_files(path_to_datasets)[0:4])
+input_files = sorted(collect_nii_files(path_to_datasets))
 
-# datasets are appended to these lists 
+# datasets are appended to these lists (bypasses the for loop below)
 input_files_filtered = [template_path, mask_path]
 dset_ids = ["template", "template"]
 channel_ids = ["V3-1", "d3-mask"]
@@ -117,8 +114,7 @@ channel_ids = ["V3-1", "d3-mask"]
 exclude_dsets = ['21B', '21C', '22D']
 exclude_chans = ['Cfos', 'NBion']
 
-
-for this_file in input_files:
+for this_file in input_files:  # doesn't include the template or mask
     this_dset = this_file.stem.split("_")[0]
     this_chan = this_file.stem.split("_")[-1].split(".")[0]
 
@@ -136,13 +132,11 @@ for this_file in input_files:
 dset_labels = [f"{d}_{c}" for d, c in zip(dset_ids, channel_ids)]
 input_files = input_files_filtered
 
-
 print(f"{len(dset_labels)} files after exclusion")
 print(f"Here are the dset labels: {dset_labels}")
 print(f"Including the following files: {input_files}")
 
 #%%
-
 create_empty_plate(store_path=output_zarr_store,
     position_keys = position_keys,
     channel_names = dset_labels, #TODO: replace for the channel names
@@ -151,27 +145,5 @@ create_empty_plate(store_path=output_zarr_store,
     scale = (1, 1, 7.51, 7.51, 7.51), #TODO: [Optional] replace for the scale in um. (T,C,Z,Y,X)
     dtype= np.float32, 
 )
-
-for i, (this_id, this_file) in enumerate(zip(dset_labels, input_files)):
-    this_name, this_arr = load_registered(this_file)
-    with open_ome_zarr(str(output_zarr_store)+f"/0/0/0", mode="r+") as store:
-        print(f"Writing {this_name}")
-        store['0'][0, i] = this_arr.astype(np.float32)
-# Parallel processing
-#from concurrent.futures import ProcessPoolExecutor
-
-# def convert_file(file_path:str, position_keys:tuple):
-#     # Logic to open a file and fill in the plate
-#     image = tifffile.imread(file_path)
-#     with open_ome_zarr(output_zarr_store+f'/{position_keys[0]}/{position_keys[1]}/{position_keys[2]}', mode='r+') as store:
-#         store["0"][this_chan] = image
-
-# file_paths = ['file_path1', 'file_path2', 'file_path3']
-# with ProcessPoolExecutor(max_workers=10) as executor:
-#     # TODO: make the matching files with the position keys
-#     file_paths = [file_path for file_path in file_paths]
-#     position_keys = [position_key for position_key in position_keys]
-#     executor.map(convert_file, file_paths, position_keys)
-# %%
 
 
