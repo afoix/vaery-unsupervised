@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Image files
+*.png
+*.tiff
+*.zarr
+*.zattrs
+*.zgroup
+*.npy

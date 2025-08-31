@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vaery-unsupervised"
+description = "Representation learning bioimaging AI@MBL 2025"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "VAEry Unsupervised", email = "representation@aimbl.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "bioformats2raw>=0.10.1",
+    "iohub>=0.2.2",
+    "torch>=2.4.1",
+    "timm>=0.9.5",
+    "tensorboard>=2.13.0",
+    "lightning>=2.3.0",
+    "monai>=1.4.0",
+    "jsonargparse[signatures]>=4.20.1",
+    "scikit-image",
+    "matplotlib>=3.9.0",
+    "numpy",
+    "pytorch-metric-learning>2.0.0",
+    "ruff"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+visual = ["napari", "jupyter", "jupytext", "transformers>=4.51.3"]
+
+dev = [
+"vaery-unsupervised[visual]",
+]
+
+[project.scripts]
+vaery-unsupervised = "vaery-unsupervised.cli:main"
+
+[tool.setuptools]
+packages = ["vaery-unsupervised"]
+
+[tool.setuptools_scm]
+write_to = "vaery-unsupervised/_version.py"
+
+[tool.ruff]
+src = ["vaery-unsupervised", "tests"]
+line-length = 88
+lint.extend-select = ["I001"]
+lint.isort.known-first-party = ["vaery-unsupervised"]
