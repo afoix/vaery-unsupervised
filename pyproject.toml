@@ -16,7 +16,6 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "bioformats2raw>=0.10.1",
     "iohub>=0.2.2",
     "torch>=2.4.1",
     "timm>=0.9.5",
@@ -39,16 +38,16 @@ dev = [
 ]
 
 [project.scripts]
-vaery-unsupervised = "vaery-unsupervised.cli:main"
+vaery-unsupervised = "vaery_unsupervised.cli:main"
 
 [tool.setuptools]
-packages = ["vaery-unsupervised"]
+packages = ["vaery_unsupervised"]
 
 [tool.setuptools_scm]
-write_to = "vaery-unsupervised/_version.py"
+write_to = "vaery_unsupervised/_version.py"
 
 [tool.ruff]
-src = ["vaery-unsupervised", "tests"]
+src = ["vaery_unsupervised", "tests"]
 line-length = 88
 lint.extend-select = ["I001"]
-lint.isort.known-first-party = ["vaery-unsupervised"]
+lint.isort.known-first-party = ["vaery_unsupervised"]
