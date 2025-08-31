@@ -32,7 +32,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 visual = ["napari", "jupyter", "jupytext", "transformers>=4.51.3"]
-
+hdf5 = ["h5py", "pyarrow"]
 dev = [
 "vaery-unsupervised[visual]",
 ]
