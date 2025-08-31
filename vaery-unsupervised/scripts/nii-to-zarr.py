@@ -7,14 +7,15 @@ https://czbiohub-sf.github.io/iohub/main/auto_examples/run_multi_fov_hcs_ome_zar
 For Nikon or other supported file formats:
 https://github.com/glencoesoftware/bioformats2raw?tab=readme-ov-file#usage
 """
+#%%
 from iohub import open_ome_zarr
 from tifffile import tifffile
 import numpy as np
-from typing import Union
-from pathlib import Path, List
+from typing import Union, List
+from pathlib import Path
 import ants
 
-def load_registered(chan_path: Path) -> np.ndarray:
+def load_registered(chan_path: Union[Path, str]) -> np.ndarray:
     """
     load_registered
     Silly little loader for nii.gz
@@ -28,10 +29,14 @@ def load_registered(chan_path: Path) -> np.ndarray:
     #assert chan_path.exists()
     
     #chan_path = data_dir / f"{dset_id}_registration_v{registration_version}" / f'{id}_v{registration_version}_{chan}.nii.gz'
+    if type(chan_path) is str:
+        chan_path = Path(chan_path)
     if chan_path.is_file():
-        file_name = chan_path.name()
+        file_name = chan_path.stem
+
         dset_id = str(file_name).split("_")[0]
-        chan_id = str(file_name).split("_")[-1]
+        chan_id = str(file_name).split("_")[-1].split(".")[0]
+
         print(f"Loading {dset_id}_{chan_id}")
         return f"{dset_id}_{chan_id}", ants.image_read(str(chan_path)).numpy()
     else:
@@ -39,7 +44,7 @@ def load_registered(chan_path: Path) -> np.ndarray:
         return None
 
 
-def collect_nii_files(directory_path: Path) -> List:
+def collect_nii_files(directory_path: Union[Path, str]) -> List:
     """
     Collect all .nii.gz file paths from a directory and its subdirectories,
     excluding files that end with 'Warp.nii.gz'
@@ -53,7 +58,10 @@ def collect_nii_files(directory_path: Path) -> List:
     nii_files = []
     
     # Convert to Path object for easier handling
-    root_dir = Path(directory_path)
+    if type(directory_path) is str:
+        root_dir = Path(directory_path)
+    else:
+        root_dir = directory_path
     
     # Check if the directory exists
     if not root_dir.exists():
@@ -69,70 +77,95 @@ def collect_nii_files(directory_path: Path) -> List:
         if file_path.is_file():
             filename = file_path.name
             # Check if file ends with .nii.gz but not Warp.nii.gz
-            if filename.endswith('.nii.gz') and not filename.endswith('Warp.nii.gz'):
-                nii_files.append(str(file_path.absolute()))
+            if filename.endswith('.nii.gz') and not filename.endswith('Warp.nii.gz') and not filename.endswith("nuc.nii.gz"):
+                nii_files.append(file_path.absolute())
     
     return nii_files
 
 
 
 
-output_zarr_dir = '/mnt/data0/home/jnc2161/mbl/reg-data/'
-path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
-
-input_files = collect_nii_files(path_to_datasets)
-
-print(f"Found {len(input_files)} datasets")
-
-for this_path in input_files:
-    vol_name, vol_arr = load_registered(this_path)
-    print(f"Size: {vol_arr.shape}")
+# output_zarr_dir = '/mnt/data0/home/jnc2161/mbl/reg-data/'
 
 
-    with open_ome_zarr(output_zarr_dir, mode='w') as store:
-        # TODO: this encodes for /row/column/fov 
-        row = 0
-        column = 0
-        fov = 0
-        position = store.create_position(row,column,fov)
+# input_files = collect_nii_files(path_to_datasets)
 
-        # TODO: replace for the array. All the arrays should be the same shape
-        position["0"] = np.random.randint(
-            0, np.iinfo(np.uint16).max, size=(5, 3, 2, 32, 32), dtype=np.uint16
-        )
+# print(f"Found {len(input_files)} datasets")
+
+# for this_path in input_files:
+#     vol_name, vol_arr = load_registered(this_path)
+#     print(f"Size: {vol_arr.shape}")
+
+
+#     with open_ome_zarr(output_zarr_dir, mode='w') as store:
+#         # TODO: this encodes for /row/column/fov 
+#         row = 0
+#         column = 0
+#         fov = 0
+#         position = store.create_position(row,column,fov)
+
+#         # TODO: replace for the array. All the arrays should be the same shape
+#         position["0"] = np.random.randint(
+#             0, np.iinfo(np.uint16).max, size=(5, 3, 2, 32, 32), dtype=np.uint16
+#         )
 
 #%%
 from iohub.ngff.utils import create_empty_plate
 
-output_zarr_store = '/output/dataset.zarr'
+output_zarr_store = Path('/mnt/data0/home/jnc2161/mbl/registered_salamander_data.zarr')
 
 #TODO: position keys for the HCS dataset format.
-position_keys = [(row,column,fov),...]
+position_keys = [('0','0','0')] #[(0, 0, 0), ...]
+_test_name, test_arr = load_registered(
+    Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/21B_registration_template_V3-1_d10_64bins/21B_template_V3-1_d10_64bins_Pax6.nii.gz")
+    )
 
-T,C,Z,Y,X = array.shape #TODO: get the shape of the array to be converted. (T,C,Z,Y,X)
+# What is this
+T,C,Z,Y,X = (1, 1, *test_arr.shape) #TODO: get the shape of the array to be converted. (T,C,Z,Y,X)
+#Z,Y,X = test_arr.shape
+print("TCZYX", T,C,Z,Y,X)
 
 #TODO: 
+path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
+input_files = sorted(collect_nii_files(path_to_datasets))[0:4]
+dset_ids = [fn.stem.split("_")[0] for fn in input_files]
+channel_ids = [fn.stem.split("_")[-1].split(".")[0] for fn in input_files]
+dset_labels = [f"{d}_{c}" for d, c in zip(dset_ids, channel_ids)]
+
+print(f"Found {len(dset_labels)}")
+print(f"Including the following files: {input_files}")
+
+
 create_empty_plate(store_path=output_zarr_store,
     position_keys = position_keys,
-    channel_names = ['channel_1'], #TODO: replace for the channel names
-    shape = (T,C,Z,Y,X), #TODO: replace for the shape (T,C,Z,Y,X)
-    chunks = None, #TODO: this is important for training (T,C,Z,Y,X)
-    scale = (1, 1, 1, 1, 1), #TODO: [Optional] replace for the scale in um. (T,C,Z,Y,X)
+    channel_names = dset_labels, #TODO: replace for the channel names
+    shape = (1,len(dset_labels),Z,Y,X), #TODO: replace for the shape (T,C,Z,Y,X)
+    chunks = (1, 1, 128, 128, 128), #TODO: this is important for training (T,C,Z,Y,X)
+    scale = (1, 1, 7.51, 7.51, 7.51), #TODO: [Optional] replace for the scale in um. (T,C,Z,Y,X)
     dtype= np.float32, 
 )
 
+
+for i, (this_id, this_file) in enumerate(zip(dset_labels, input_files)):
+    this_name, this_arr = load_registered(this_file)
+    with open_ome_zarr(str(output_zarr_store)+f"/0/0/0", mode="r+") as store:
+        print(f"Writing {this_name}")
+        store['0'][0, i] = this_arr
 # Parallel processing
-from concurrent.futures import ProcessPoolExecutor
+#from concurrent.futures import ProcessPoolExecutor
 
-def convert_file(file_path:str, position_keys:tuple):
-    # Logic to open a file and fill in the plate
-    image = tifffile.imread(file_path)
-    with open_ome_zarr(output_zarr_store+f'/{position_keys[0]}/{position_keys[1]}/{position_keys[2]}', mode='r+') as store:
-        store["0"] = image
+# def convert_file(file_path:str, position_keys:tuple):
+#     # Logic to open a file and fill in the plate
+#     image = tifffile.imread(file_path)
+#     with open_ome_zarr(output_zarr_store+f'/{position_keys[0]}/{position_keys[1]}/{position_keys[2]}', mode='r+') as store:
+#         store["0"][this_chan] = image
 
-file_paths = ['file_path1', 'file_path2', 'file_path3']
-with ProcessPoolExecutor(max_workers=10) as executor:
-    # TODO: make the matching files with the position keys
-    file_paths = [file_path for file_path in file_paths]
-    position_keys = [position_key for position_key in position_keys]
-    executor.map(convert_file, file_paths, position_keys)
+# file_paths = ['file_path1', 'file_path2', 'file_path3']
+# with ProcessPoolExecutor(max_workers=10) as executor:
+#     # TODO: make the matching files with the position keys
+#     file_paths = [file_path for file_path in file_paths]
+#     position_keys = [position_key for position_key in position_keys]
+#     executor.map(convert_file, file_paths, position_keys)
+# %%
+
+
