@@ -83,32 +83,6 @@ def collect_nii_files(directory_path: Union[Path, str]) -> List:
     return nii_files
 
 
-
-
-# output_zarr_dir = '/mnt/data0/home/jnc2161/mbl/reg-data/'
-
-
-# input_files = collect_nii_files(path_to_datasets)
-
-# print(f"Found {len(input_files)} datasets")
-
-# for this_path in input_files:
-#     vol_name, vol_arr = load_registered(this_path)
-#     print(f"Size: {vol_arr.shape}")
-
-
-#     with open_ome_zarr(output_zarr_dir, mode='w') as store:
-#         # TODO: this encodes for /row/column/fov 
-#         row = 0
-#         column = 0
-#         fov = 0
-#         position = store.create_position(row,column,fov)
-
-#         # TODO: replace for the array. All the arrays should be the same shape
-#         position["0"] = np.random.randint(
-#             0, np.iinfo(np.uint16).max, size=(5, 3, 2, 32, 32), dtype=np.uint16
-#         )
-
 #%%
 from iohub.ngff.utils import create_empty_plate
 
@@ -128,13 +102,32 @@ print("TCZYX", T,C,Z,Y,X)
 #TODO: 
 path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
 input_files = sorted(collect_nii_files(path_to_datasets))[0:4]
-dset_ids = [fn.stem.split("_")[0] for fn in input_files]
-channel_ids = [fn.stem.split("_")[-1].split(".")[0] for fn in input_files]
+input_files_filtered = []
+dset_ids = []
+channel_ids = []
+exclude_dsets = ['21B', '21C', '22D']
+exclude_chans = ['Cfos', 'NBion']
+
+for this_file in sorted(collect_nii_files(path_to_datasets)):
+    this_dset = this_file.stem.split("_")[0]
+    this_chan = this_file.stem.split("_")[-1].split(".")[0]
+
+    if this_dset in exclude_dsets:
+        print(f"Excluding {this_file}")
+        continue
+    elif this_chan in exclude_chans:
+        print(f"Excluding {this_file}")
+        continue
+    else:
+        dset_ids.append(this_dset)
+        channel_ids.append(this_chan)
+        input_files_filtered.append(this_file)
+
 dset_labels = [f"{d}_{c}" for d, c in zip(dset_ids, channel_ids)]
+input_files = input_files_filtered
 
 print(f"Found {len(dset_labels)}")
 print(f"Including the following files: {input_files}")
-
 
 create_empty_plate(store_path=output_zarr_store,
     position_keys = position_keys,
@@ -144,7 +137,6 @@ create_empty_plate(store_path=output_zarr_store,
     scale = (1, 1, 7.51, 7.51, 7.51), #TODO: [Optional] replace for the scale in um. (T,C,Z,Y,X)
     dtype= np.float32, 
 )
-
 
 for i, (this_id, this_file) in enumerate(zip(dset_labels, input_files)):
     this_name, this_arr = load_registered(this_file)
