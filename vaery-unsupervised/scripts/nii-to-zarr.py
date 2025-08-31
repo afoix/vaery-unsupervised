@@ -11,13 +11,10 @@ from iohub import open_ome_zarr
 from tifffile import tifffile
 import numpy as np
 from typing import Union
-from pathlib import Path
+from pathlib import Path, List
 import ants
 
-def load_registered(dset_id: str, 
-                    chan: str, 
-                    registration_version: str, 
-                    data_dir: Union[str, Path]) -> np.ndarray:
+def load_registered(chan_path: Path) -> np.ndarray:
     """
     load_registered
     Silly little loader for nii.gz
@@ -28,21 +25,21 @@ def load_registered(dset_id: str,
         chan (str): Channel identifier, e.g. 'Gbx2'
         registration_version: str, name of the registration model. 
     """
-
-    # Registered data from v3 onwards has a diff filename convention pattern
-    pattern = f'{dset_id}*/*{registration_version}_{chan}.nii.gz'
-    matches = list(data_dir.glob(pattern))
-    assert len(matches) == 1
-    chan_path = matches[0]
+    #assert chan_path.exists()
+    
     #chan_path = data_dir / f"{dset_id}_registration_v{registration_version}" / f'{id}_v{registration_version}_{chan}.nii.gz'
     if chan_path.is_file():
-        return ants.image_read(str(chan_path)).numpy()
+        file_name = chan_path.name()
+        dset_id = str(file_name).split("_")[0]
+        chan_id = str(file_name).split("_")[-1]
+        print(f"Loading {dset_id}_{chan_id}")
+        return f"{dset_id}_{chan_id}", ants.image_read(str(chan_path)).numpy()
     else:
         print(f"File {chan_path} not found")
         return None
 
 
-def collect_nii_files(directory_path):
+def collect_nii_files(directory_path: Path) -> List:
     """
     Collect all .nii.gz file paths from a directory and its subdirectories,
     excluding files that end with 'Warp.nii.gz'
@@ -80,22 +77,29 @@ def collect_nii_files(directory_path):
 
 
 
-output_zarr_store = '/output/dataset.zarr'
-path_to_dataset = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
-tifffile.imread("test.czi")
+output_zarr_dir = '/mnt/data0/home/jnc2161/mbl/reg-data/'
+path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
 
-# This creates a zarr store
-with open_ome_zarr(output_zarr_store, mode='w') as store:
-    # TODO: this encodes for /row/column/fov 
-    row = 0
-    column = 0
-    fov = 0
-    position = store.create_position(row,column,fov)
+input_files = collect_nii_files(path_to_datasets)
 
-    # TODO: replace for the array. All the arrays should be the same shape
-    position["0"] = np.random.randint(
-        0, np.iinfo(np.uint16).max, size=(5, 3, 2, 32, 32), dtype=np.uint16
-    )
+print(f"Found {len(input_files)} datasets")
+
+for this_path in input_files:
+    vol_name, vol_arr = load_registered(this_path)
+    print(f"Size: {vol_arr.shape}")
+
+
+    with open_ome_zarr(output_zarr_dir, mode='w') as store:
+        # TODO: this encodes for /row/column/fov 
+        row = 0
+        column = 0
+        fov = 0
+        position = store.create_position(row,column,fov)
+
+        # TODO: replace for the array. All the arrays should be the same shape
+        position["0"] = np.random.randint(
+            0, np.iinfo(np.uint16).max, size=(5, 3, 2, 32, 32), dtype=np.uint16
+        )
 
 #%%
 from iohub.ngff.utils import create_empty_plate
