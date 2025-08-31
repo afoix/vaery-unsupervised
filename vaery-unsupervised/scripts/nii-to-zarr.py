@@ -100,15 +100,25 @@ T,C,Z,Y,X = (1, 1, *test_arr.shape) #TODO: get the shape of the array to be conv
 print("TCZYX", T,C,Z,Y,X)
 
 #TODO: 
+### path and label for template and mask
+template_path = Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1/template_V3-1.nii.gz")
+mask_path = Path("/mnt/data1/shared/pleuro-brain-atlas/template_V3-1/template_V3-1_d3-mask.nii.gz")
+assert template_path.is_file(), f"Template not found at {template_path}"
+assert mask_path.is_file(), f"Mask not found at {mask_path}"
+
 path_to_datasets = '/mnt/data1/shared/pleuro-brain-atlas/template_V3-1_d10_64bins_registered/'
-input_files = sorted(collect_nii_files(path_to_datasets))[0:4]
-input_files_filtered = []
-dset_ids = []
-channel_ids = []
+input_files = sorted(collect_nii_files(path_to_datasets)[0:4])
+
+# datasets are appended to these lists 
+input_files_filtered = [template_path, mask_path]
+dset_ids = ["template", "template"]
+channel_ids = ["V3-1", "d3-mask"]
+
 exclude_dsets = ['21B', '21C', '22D']
 exclude_chans = ['Cfos', 'NBion']
 
-for this_file in sorted(collect_nii_files(path_to_datasets)):
+
+for this_file in input_files:
     this_dset = this_file.stem.split("_")[0]
     this_chan = this_file.stem.split("_")[-1].split(".")[0]
 
@@ -126,8 +136,12 @@ for this_file in sorted(collect_nii_files(path_to_datasets)):
 dset_labels = [f"{d}_{c}" for d, c in zip(dset_ids, channel_ids)]
 input_files = input_files_filtered
 
-print(f"Found {len(dset_labels)}")
+
+print(f"{len(dset_labels)} files after exclusion")
+print(f"Here are the dset labels: {dset_labels}")
 print(f"Including the following files: {input_files}")
+
+#%%
 
 create_empty_plate(store_path=output_zarr_store,
     position_keys = position_keys,
@@ -142,7 +156,7 @@ for i, (this_id, this_file) in enumerate(zip(dset_labels, input_files)):
     this_name, this_arr = load_registered(this_file)
     with open_ome_zarr(str(output_zarr_store)+f"/0/0/0", mode="r+") as store:
         print(f"Writing {this_name}")
-        store['0'][0, i] = this_arr
+        store['0'][0, i] = this_arr.astype(np.float32)
 # Parallel processing
 #from concurrent.futures import ProcessPoolExecutor
 
