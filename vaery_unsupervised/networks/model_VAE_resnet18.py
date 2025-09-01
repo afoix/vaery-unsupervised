@@ -1,6 +1,7 @@
 import torch
-from torch import nn, optim
 import torch.nn.functional as F
+from torch import nn, optim
+
 
 class ResizeConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, scale_factor, mode='nearest'):

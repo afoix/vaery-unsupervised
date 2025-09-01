@@ -1,6 +1,8 @@
 import lightning
+
 from vaery_unsupervised.dataloaders.MNISTDataModule import MNISTDataModule
 from vaery_unsupervised.networks.LitVAE import LitVAE
+
 
 def main(*args, **kwargs):
   litmodel = LitVAE()
