@@ -3,6 +3,7 @@ import logging
 import lightning as L
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import v2
 from iohub import open_ome_zarr
 import numpy as np
 #from monai.transforms import RandSpatialCropSamples
@@ -27,8 +28,8 @@ class SalBrainDataModule(L.LightningDataModule):
                  data_path: str="/home/jnc2161/mbl/registered_salamander_data.zarr",
                  batch_size: int=9, 
                  patch_size: Union[Tuple, List]=(32, 32, 32), 
-                 normalizations: List=[], 
-                 augmentations: List=[], 
+                 #normalizations: List=[], 
+                 #augmentations: List=[], 
                  pin_memory: bool=False,
                  num_workers: int=32, 
                  prefetch_factor: int=2,
@@ -40,8 +41,10 @@ class SalBrainDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.patch_size = patch_size
 
-        self.normalizations = normalizations
-        self.augmentations = augmentations
+        # self.transformations = Compose([
+        #     Normalize(mean=[0.0], std=[1.0])
+        # ])
+        #self.augmentations = augmentations
 
         self.pin_memory = pin_memory
         self.num_workers = num_workers
@@ -56,13 +59,22 @@ class SalBrainDataModule(L.LightningDataModule):
         """
 
         if stage == "fit" or stage == "train":
-            self.dataset = SalBrainDataset(self.data_path, self.batch_size, self.patch_size)
+            self.dataset = SalBrainDataset(self.data_path, 
+                                           self.batch_size, 
+                                           self.patch_size) 
+                                           #transformations=self.transformations)
+            self.channel_names = self.dataset.channel_names
         elif stage == "val" or stage == "validate":
-            self.dataset = SalBrainDataset(self.data_path, self.batch_size, self.patch_size)
+            self.dataset = SalBrainDataset(self.data_path, 
+                                           self.batch_size, 
+                                           self.patch_size) 
+                                           #transformations=self.transformations)
+            self.channel_names = self.dataset.channel_names
         elif stage == "predict":
             raise NotImplementedError("Predict stage not implemented yet.")
         else:
             raise ValueError("Stage must be fit/train, val/validate, or predict.")
+        
 
     def train_dataloader(self):
         return DataLoader(self.dataset, 
@@ -100,25 +112,32 @@ class SalBrainDataset(Dataset):
                  batch_size: int, 
                  patch_size: Union[List, Tuple], 
                  mask_channel: int=1,
-                 normalizations: List=[], 
-                 augmentations: List=[], 
+                 #normalizations: List=[], 
+                 #augmentations: List=[], 
                  ):
         
         super().__init__()
 
         self.data_path = data_path
         self.patch_size = patch_size
+        self.exclude_channels = [4, 5]
 
         with open_ome_zarr(
             self.data_path,
             mode='r'
         ) as dataset:
-            self.volume = dataset["0/0/0/0"] # dims is (1, C, Z, Y, X), (1, 68, 530, 1189, 585)
-            self.channel_names = dataset["0/0/0"].channel_names
+            self.volume = dataset["0/0/0/0"] # dims is (T, C, Z, Y, X), (1, 68, 530, 1189, 585)
+            self.channel_names = [c for i, c in enumerate(dataset["0/0/0"].channel_names) if i not in self.exclude_channels]
+        self.n_channels = len(self.channel_names)
         self.mask = self.volume[0, mask_channel].copy().astype(bool)
         self.bounding_box = get_bounding_box(self.mask)
         self.volume_shape = self.volume.shape
-        self.exclude_channels = [4, 5]
+
+        print(self.n_channels)
+        print(len([0.0 for i in range(self.n_channels)]))
+
+        self.transformations = v2.Compose([v2.Normalize(mean=[0.0 for i in range(self.n_channels)], 
+                                                  std=[1.0 for i in range(self.n_channels)])])
         self.indices = random_patch_sampler(self.bounding_box, 
                                             self.patch_size, 
                                             num_samples=batch_size,  # *100??
@@ -131,11 +150,23 @@ class SalBrainDataset(Dataset):
     
     def __getitem__(self, 
                     index):
-        return self.volume[0, 
+        
+        vol = self.volume[0, 
                            [c for c in range(self.volume.shape[1]) if c not in self.exclude_channels], 
                            self.indices[index][0]:self.indices[index][1], 
                            self.indices[index][2]:self.indices[index][3], 
                            self.indices[index][4]:self.indices[index][5]]
+        
+        print("from get_item:", vol.shape)
+
+        mean = np.mean(vol, axis=(1, 2, 3), keepdims=True)
+        std = np.std(vol, axis=(1, 2, 3), keepdims=True)
+        std = np.where(std == 0, 1, std)
+
+
+        vol = (vol - mean) / std
+
+        return vol
 
 
 def get_bounding_box(brainary_mask: np.array, pad: int=0) -> Tuple:
