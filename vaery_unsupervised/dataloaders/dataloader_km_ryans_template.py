@@ -1,3 +1,4 @@
+#%%
 import logging
 import spatialdata as sd
 import numpy as np
@@ -8,7 +9,7 @@ from monai.data.utils import collate_meta_tensor
 from monai.transforms import (
     CenterSpatialCropd,
     Compose,
-    DictTransform,
+#    DictTransform, -> doesn't work
     MapTransform,
     MultiSampleTrait,
     RandAffined,
@@ -98,7 +99,7 @@ def extract_image_mask_poly_well(
         name_transformed_poly = 'affine_transformed', 
         size=128
 ):
-
+    sdata = sdata.subset([name_coordinates,name_image,name_transformed_poly])
     poly = sdata[name_transformed_poly].iloc[idx]['geometry']
     well = sdata[name_transformed_poly].index[idx]
     centroid = poly.centroid.coords[0]
@@ -138,6 +139,9 @@ def load_sdata_files(file_list,shapes_name = 'affine_transformed'):
 
     return (sdata_objects, mapping, total_length)
 
+def simple_masking(image, mask):
+    return image * mask
+
 _logger = logging.getLogger("lightning.pytorch")
 
 class SpatProteomicsDataset(Dataset):
@@ -146,7 +150,8 @@ class SpatProteomicsDataset(Dataset):
             file_list:list[str],
             patient_id_list: list[str],
             masking_function,
-            transform: DictTransform|None=None, 
+            normalisation_function=None,
+            transform: list|None=None, 
             train_val_split =0.8,
             polygon_sdata_name = 'affine_transformed',
             seed=42,
@@ -154,6 +159,7 @@ class SpatProteomicsDataset(Dataset):
     ):
         super().__init__()
         # adding dataset_specific information
+        self.patient_id_list = patient_id_list
         self.image_name_list = [f"czi_{key}" for key in patient_id_list]
         self.coordinate_name_list = [f"aligned_{key}" for key in patient_id_list]
         self.polygon_sdata_name = polygon_sdata_name
@@ -168,10 +174,14 @@ class SpatProteomicsDataset(Dataset):
         self.mapping = mapping
         self.total_length = total_length
 
+        # defining functions for masking and normalisation
+        # normalisation function expects (image, patient_id)
+        self.masking_function = masking_function
+        self.normalisation_function = normalisation_function
+
         # setting transform and train/val split
         self.transform = transform
         self.train = train
-        self.masking_function = masking_function
 
         # get random seed to ensure same train / val split
         np.random.seed(seed)
@@ -179,6 +189,19 @@ class SpatProteomicsDataset(Dataset):
         split = int(train_val_split * total_length)
         self.train_indices = indices[:split]
         self.val_indices = indices[split:]
+        
+        self.means, self.std_devs = self.get_means_stddev_per_dataset()
+
+    def get_means_stddev_per_dataset(self):
+        means = []
+        stddevs = []
+        for i, sdata in enumerate(self.datasets):
+            image_name = self.image_name_list[i]
+            mean = sdata[image_name].mean(dim = ['y','x'])
+            std = sdata[image_name].std(dim = ['y','x'])
+            means.append(mean)
+            stddevs.append(std)
+        return means, stddevs
 
     def __len__(self):
         if self.train:
@@ -203,12 +226,18 @@ class SpatProteomicsDataset(Dataset):
             name_coordinates=self.coordinate_name_list[dataset_idx],
         )
         metadata = {
-            "dataset":self.file_list[dataset_idx], 
+            "dataset":self.patient_id_list[dataset_idx], 
+            "dataset_file":self.file_list[dataset_idx],
             "row_idx":row_idx,
             "well_id":well,
             "poly":poly
         }
         sample = self.masking_function(image, mask)
+        if self.normalisation_function is not None:
+            sample = self.normalisation_function(
+                sample,
+                self.patient_id_list[dataset_idx])
+        sample = torch.Tensor(sample)
         if self.transform:
             # TODO FIGURE OUT TRANSFORMS
             NotImplementedError("This method is not implemented")
@@ -223,13 +252,13 @@ class SpatProteomicDataModule(LightningDataModule):
     def __init__(
             self, 
             data_paths:list[str],
-            image_name_list:list[str],
-            coordinate_name_list:list[str],
+            patient_id_list: list[str],
             sdata_polygon_name:str,
             masking_function,
             batch_size:int, 
             num_workers:int,
-            transform: DictTransform|None=None,
+            normalisation_function=None,
+            transform: list|None=None,
             prefetch_factor:int=2,
             pin_memory:bool=True,
             persistent_workers:bool=False,
@@ -238,11 +267,11 @@ class SpatProteomicDataModule(LightningDataModule):
         super().__init__()
         # adding dataset_specific information
         self.data_paths = data_paths
-        self.image_name_list = image_name_list
-        self.coordinate_name_list = coordinate_name_list
+        self.patient_id_list = patient_id_list
         self.sdata_polygon_name = sdata_polygon_name
 
         # setting masking function and transform
+        self.normalisation_function = normalisation_function
         self.masking_function = masking_function
         self.transform = transform
 
@@ -265,24 +294,26 @@ class SpatProteomicDataModule(LightningDataModule):
         if stage == "fit" or stage == "train":
             self.dataset = SpatProteomicsDataset(
                 file_list=self.data_paths, 
-                masking_function=self.masking_function, 
+                patient_id_list=self.patient_id_list,
+                masking_function=self.masking_function,
+                normalisation_function=self.normalisation_function,
                 transform=self.transform,
-                seed=self.seed,
-                image_name_list=self.image_name_list,
-                coordinate_name_list=self.coordinate_name_list,
                 polygon_sdata_name=self.sdata_polygon_name,
+                seed=self.seed,
+                train=True,
             )
 
         elif stage == "val" or stage == "validate":
             self.dataset = SpatProteomicsDataset(
                 file_list=self.data_paths, 
-                train=False,
-                masking_function=self.masking_function, 
+                patient_id_list=self.patient_id_list,
+                masking_function=self.masking_function,
+                normalisation_function=self.normalisation_function,
                 transform=self.transform,
-                seed=self.seed,
-                image_name_list=self.image_name_list,
-                coordinate_name_list=self.coordinate_name_list,
                 polygon_sdata_name=self.sdata_polygon_name,
+                seed=self.seed,
+                train=False,
+
             )
 
         elif stage == "predict":
@@ -296,3 +327,70 @@ class SpatProteomicDataModule(LightningDataModule):
 
     def predict_dataloader(self):
         return DataLoader(self.dataset, batch_size=self.batch_size, num_workers=self.num_workers,pin_memory=True,prefetch_factor=self.prefetch_factor)
+    
+#%% testing
+prefix = "/mnt/efs/aimbl_2025/student_data/S-KM/001_Used_Zarrs/onlybatch1/"
+suffix = "_sdata_at"
+name_list = ["450","453","456_2","457","493_2", "543_2"] #  something fishy going on with this one
+file_list = [prefix + name + suffix for name in name_list]
+file_list
+
+#%%
+dataset = SpatProteomicsDataset(
+    file_list=file_list,
+    patient_id_list=name_list,
+    masking_function=simple_masking,
+    normalisation_function=None,
+    transform=None,
+    train_val_split=0.9,
+    polygon_sdata_name='affine_transformed',
+    seed=42,
+    train=True,
+)
+#%%
+len(dataset)
+# %%
+def transpose_polygon_to_image(geom, size):
+    if geom.is_empty:
+        return np.zeros((size, size), dtype=bool), (np.nan, np.nan)
+
+    # centroid (x, y). Note: x ~ columns, y ~ rows
+    cx, cy = geom.centroid.x, geom.centroid.y
+    half = size / 2.0
+
+    # crop window bounds in original coords (float)
+    x_min = cx - half
+    y_min = cy - half
+
+    # translate geometry so that (x_min, y_min) maps to (0, 0) in the mask frame
+    g = translate(geom, xoff=-x_min, yoff=-y_min)
+
+    return g
+#%%
+import matplotlib.pyplot as plt
+def plot_single_sample(dataset, idx, channels = [1,2,3]):
+    test_sample = dataset[idx]
+    test_image = test_sample[0].numpy()
+    test_poly = test_sample[1]["poly"]
+    translated_poly = transpose_polygon_to_image(test_poly,128)
+    x,y = translated_poly.exterior.xy
+
+    plt.imshow(
+        np.moveaxis(
+            test_image[np.array(channels)]/np.max(
+                test_image[np.array(channels)],axis=(1,2)
+            )[:,np.newaxis,np.newaxis],
+            0,
+            -1
+        )
+    )
+    plt.plot(x,y, color='yellow')
+
+plot_single_sample(dataset, 500)
+#%%
+
+sdata = dataset.datasets[0]
+mean = sdata["czi_450"].mean(dim = ['y','x'])
+std = sdata["czi_450"].std(dim = ['y','x'])
+# %%
+# transforms = [affine, shear, gauss noise, smoothing, flips, intensity, variation]
