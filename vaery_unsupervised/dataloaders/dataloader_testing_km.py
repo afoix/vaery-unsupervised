@@ -1,92 +1,129 @@
-#%%
-import spatialdata as sd
-sdata = sd.read_zarr("/mnt/efs/aimbl_2025/student_data/S-KM/wlog2/450_wlog2")
-sdata
-from spatialdata.transformations import (
-    Affine,
-    MapAxis,
-    Scale,
-    Sequence,
-    Translation,
-    get_transformation,
-    set_transformation,
+#%% testing
+from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
+    DATASET_NORM_DICT,
+    SpatProteomicDataModule,
+    SpatProteomicsDataset,
+    simple_masking,
+    DataLoader
 )
-# %%
-poly = sdata.shapes['xml_contours_450'].iloc[0]["geometry"]
-poly.centroid.coords[0]
-# %%
-poly.bounds[0]
+from vaery_unsupervised.km_utils import (plot_batch_sample, plot_dataloader_output)
+import numpy as np
+import monai.transforms as transforms
+
+prefix = "/mnt/efs/aimbl_2025/student_data/S-KM/001_Used_Zarrs/onlybatch1/"
+suffix = "_sdata_at"
+name_list = ["450","453","456_2","457","493_2", "543_2"] 
+file_list = [prefix + name + suffix for name in name_list]
+file_list
+
+# means_stddev_dict = {}
+# for data_name in name_list:
+#     file_name = prefix + data_name + suffix 
+#     sdata = sd.read_zarr(file_name)
+#     mean, stddev = get_crop_mean_stdev(sdata,data_name)
+#     means_stddev_dict[data_name] = (mean, stddev)
+#%%
+means_stddev_dict = DATASET_NORM_DICT
 #%%
 
-sd.transformations.get_transformation(sdata.shapes["xml_contours_450"], to_coordinate_system="aligned_450", get_all=False)#
-
-#%%
-from spatialdata.dataloader import ImageTilesDataset
-size=64
-dataset = ImageTilesDataset(
-    sdata, 
-    regions_to_images = {"xml_contours_450":"czi_450"}, 
-    regions_to_coordinate_systems= {"xml_contours_450": "aligned_450"}, 
-    tile_scale = 1, tile_dim_in_units = size
-)
-
-dataset[12]
-# %%
-idx = 12
-dataset[idx]
-#%%
-sdata["xml_contours_450"].loc["C8"]
-dataset[idx]
-# %%
-unique_id = sdata["xml_contours_450"].iloc[idx].name
-unique_id
-# %%
-crop_mins = dataset.tiles_coords[["miny","minx"]].iloc[idx].to_numpy()
-crop_maxs = dataset.tiles_coords[["maxy","maxx"]].iloc[idx].to_numpy()
-
-sdata_cropped = sdata.query.bounding_box(
-    axes=["y", "x"],
-    min_coordinate=crop_mins,
-    max_coordinate=crop_maxs,
-    target_coordinate_system="aligned_450",
-    filter_table=False
-)
-
-sdata_cropped
-#%%
-from spatialdata import join_spatialelement_table
-
-out = join_spatialelement_table(
-    sdata,
-    unique_id, table_name="450_table_traj_final"
-
+dataset = SpatProteomicsDataset(
+    file_list=file_list,
+    patient_id_list=name_list,
+    masking_function=simple_masking,
+    dataset_normalisation_dict=means_stddev_dict,
+    transform_input=None,
+    transform_both = None,
+    train_val_split=0.9,
+    polygon_sdata_name='affine_transformed',
+    seed=42,
+    train=True,
 )
 #%%
-sdata_cropped['450_table_traj_final'] = sdata_cropped['450_table_traj_final'][sdata_cropped['450_table_traj_final'].obs["lmd_well"] == unique_id]
-sdata_cropped['450_table_traj_final'].obs
+len(dataset)
+# %%
+
+sdata = dataset.datasets[0]
+mean = sdata["czi_450"].mean(dim = ['y','x'])
+std = sdata["czi_450"].std(dim = ['y','x'])
+# %%
+# transforms = [affine, flips, shear, gauss_noise, smoothing, intensity, variation]
+# %%
+for i in range(600)[::20]:
+    print(dataset[i]["raw"].mean(axis=(1,2)))
 
 # %%
-sdata_cropped.pl.render_images("czi_450").pl.render_shapes("xml_contours_450").pl.show()
-#sdata_cropped.pl.render_shapes("xml_contours_450").pl.show()
+transform_both = [
+    transforms.RandAffine(prob=0.5, 
+        rotate_range=3.14, 
+        shear_range=(0,0,0), 
+        translate_range=(0,20,20), 
+        scale_range=None,   
+        padding_mode="zeros",
+        spatial_size=(128,128)),
+    transforms.RandFlip(prob = 0.5,
+                                spatial_axis = [-1], 
+                            ),]
+
+transform_input = [
+    transforms.RandGaussianNoise(
+        prob = 0.5,
+        mean = 0,
+        std = 1
+    ),
+]
 # %%
-sdata_cropped
-# %%
-matrix = sd.transformations.get_transformation(sdata["xml_contours_450"], to_coordinate_system="aligned_450")
-matrix
-# %%
-sdata["affinetransformed_contours_450"] = sd.transform(
-    sdata["xml_contours_450"],
-    to_coordinate_system='aligned_450',
+transformed_dataset = SpatProteomicsDataset(
+    file_list=file_list,
+    patient_id_list=name_list,
+    masking_function=simple_masking,
+    dataset_normalisation_dict=means_stddev_dict,
+    transform_input=transform_input,
+    transform_both = transform_both,
+    train_val_split=0.9,
+    polygon_sdata_name='affine_transformed',
+    seed=42,
+    train=True,
 )
 # %%
-sdata["affinetransformed_contours"]
+for i in np.random.randint(0, len(transformed_dataset), 10):
+    x = transformed_dataset[i]
+    plot_dataloader_output(x)
+
 # %%
-def load_sdata_objects(list_of_files): # make lookup table
-    pass
+lightningmodule = SpatProteomicDataModule(
+    data_paths=file_list,
+    patient_id_list=name_list,
+    masking_function=simple_masking,
+    dataset_normalisation_dict=means_stddev_dict,
+    transform_input=transform_input,
+    transform_both = transform_both,
+    polygon_sdata_name='affine_transformed',
+     num_workers=1,
+     batch_size=4,
+#     prefetch_factor=None,
+#     pin_memory=False,
+)
+lightningmodule.setup("train")
+# %%
+loader = DataLoader(
+    lightningmodule.dataset,
+    batch_size=4,
+    shuffle = False
+)
+for batch in loader:
+    tes_batch = batch
+    break
+#%%
+tes_batch["raw"].shape
+# %%
+loader = lightningmodule.train_dataloader()
+#%%
+for batch in loader:
+    tes_batch = batch
+    break
+tes_batch
 
-def make_lookup(idx): # -> which dataset to look at and what idx in that dataset
-    pass
+# %%
 
-def get_sample(idx): # -> image, mask, well_ID
-    pass
-
+plot_batch_sample(tes_batch)
+# %%
