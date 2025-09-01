@@ -4,7 +4,8 @@ import pandas as pd
 def expand_metadata_on_time(
     metadata: pd.DataFrame,
     n_timepoints: int,
-    cols_to_keep: list[str] = None
+    cols_to_keep: list[str] = ['Multi-Experiment Phenotype Trenchid', 'oDEPool7_id', 
+                'Gene', 'gene_id', 'Experiment #', 'grna_file_trench_index']
 ) -> pd.DataFrame:
     metadata_expanded = (metadata
         .loc[:, cols_to_keep]

@@ -1,14 +1,17 @@
 #%%
+%load_ext autoreload
+%autoreload 2
 import lightning as L
 from pathlib import Path
 from typing import Callable, Literal, Sequence, Optional
 import pandas as pd
+from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 import h5py
 import numpy as np
 
 T = 60
-H = 150
+# H = 150
 HEADPATH = '/mnt/efs/aimbl_2025/student_data/S-GL/'
 KEY_FL = 'fluorescence'
 KEY_SEG = 'segmentation'
@@ -17,21 +20,35 @@ class MarlinDataset(Dataset):
     def __init__(self,
                  data_path: Path,
                  metadata_path: str,
+                 train_mode:bool=True,
+                 split_ratio: float = 0.8,
                 #  train_image_width: int,
                 #  sampling_type: str = None,
                  transform: Optional[Callable] = None):
         self.data_path = data_path
         self.metadata_path = metadata_path
+        self.train_mode = train_mode
+        self.split_ratio = split_ratio
         # self.train_image_width = train_image_width
         # self.sampling_type = sampling_type
         self.metadata = pd.read_pickle(metadata_path)
         self.transform = transform
 
-    def __len__(self):
-        return len(self.metadata) # verify
+        indices_all = self.metadata.index.tolist()
+        np.random.shuffle(indices_all) # TODO
+        self.train_indices = indices_all[:int(len(indices_all) * self.split_ratio)]
+        self.val_indices = indices_all[int(len(indices_all) * self.split_ratio):]
+        if self.train_mode:
+            self.metadata = self.metadata.iloc[train_indices]
+        else:
+            self.metadata = self.metadata.iloc[val_indices]
 
-    def center_image(self, img, D):
+    def __len__(self):
+        return len(self.metadata)
+
+    def center_image(self, img):
             h, w = img.shape
+            D = np.max([h, w])
             out = np.zeros((D, D), dtype=img.dtype)
             y_offset = (D - h) // 2
             x_offset = (D - w) // 2
@@ -39,7 +56,7 @@ class MarlinDataset(Dataset):
             return out
 
     def __getitem__(self, index: int):
-
+        
         metadata_sample = self.metadata.iloc[index]
         print(metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index']])
         gene_id, grna_id, grna_file_trench_index, timepoint = metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
@@ -53,10 +70,10 @@ class MarlinDataset(Dataset):
             img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T]
 
           # Set your desired output size
-        img_fl_anchor = self.center_image(img_fl_anchor, H)
-        img_fl_pos = self.center_image(img_fl_pos, H)
-        img_seg_anchor = self.center_image(img_seg_anchor, H)
-        img_seg_pos = self.center_image(img_seg_pos, H)
+        img_fl_anchor = self.center_image(img_fl_anchor)
+        img_fl_pos = self.center_image(img_fl_pos)
+        img_seg_anchor = self.center_image(img_seg_anchor)
+        img_seg_pos = self.center_image(img_seg_pos)
 
         return {'anchor': img_fl_anchor, 'positive': img_fl_pos}
 #%%
@@ -66,41 +83,23 @@ dataset = MarlinDataset(
     transform=None
 )
 #%%
-dataset
-#%%
-metadata = pd.read_pickle(HEADPATH+'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering.pkl')
-metadata
-COLS_TO_KEEP = ['Multi-Experiment Phenotype Trenchid', 'oDEPool7_id', 
-                'Gene', 'gene_id', 'Experiment #', 'grna_file_trench_index']
-#%%
-%load_ext autoreload
-%autoreload 2
-#%%
-import marlin_dataloader.utils as mdu
-metadata_expanded = mdu.expand_metadata_on_time(metadata, n_timepoints=T, cols_to_keep=COLS_TO_KEEP)
-#%%
-# metadata_expanded.to_pickle(HEADPATH+'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
-metadata_expanded = pd.read_pickle(HEADPATH+'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
-metadata_expanded
-#%%
-dataset.metadata.loc[:, COLS_TO_KEEP].reset_index()
+img_anc, img_pos = dataset[3001].values()
 
-expanded_metadata = pd.DataFrame(
-    dataset.metadata.loc[:, COLS_TO_KEEP].reset_index()
-    .apply(lambda x: x.repeat(T).reset_index(drop=True))
-)
-expanded_metadata['timepoint'] = expanded_metadata.groupby(expanded_metadata.index // T).cumcount()
-# expanded_metadata.head()
-#%%
-expanded_metadata.to_pickle(HEADPATH+'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
-#%%
-# Get total size in MB of dataset.metadata
-metadata_size = expanded_metadata.memory_usage(deep=True).sum() / (1024 ** 2)
-print(f"Total size of dataset.metadata: {metadata_size:.2f} MB")
+import matplotlib.pyplot as plt
+# Visualize the images
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.imshow(img_anc, cmap='gray')
+plt.title('Anchor Image')
+plt.axis('off')
+plt.subplot(1, 2, 2)
+plt.imshow(img_pos, cmap='gray')
+plt.title('Positive Image')
+plt.axis('off')
+plt.show()
 
-# dataset.metadata
 #%%
-class DemoDataModule(L.LightningDataModule):
+class MarlinDataModule(L.LightningDataModule):
     def __init__(
         self,
         data_path: str,
@@ -114,33 +113,51 @@ class DemoDataModule(L.LightningDataModule):
         super().__init__()
         self.data_path = data_path
         # parse indices
+        self.metadata_path = metadata_path
         self.metadata = pd.read_pickle(metadata_path)
-        self.indices = tuple(
-            (str(gene_id), str(oDEPool7_id), str(grna_file_trench_index))
-            for gene_id, oDEPool7_id, grna_file_trench_index in
-            self.metadata.loc[:, ['gene_id', 'oDEPool7_id', 'grna_file_trench_index']].itertuples(index=False, name=None)
-        )
+        self.batch_size = batch_size
+        self.indices = self.metadata.index.tolist()
         self.split_ratio = split_ratio
     
-
         print(self.indices)
         print(len(self.indices))
-            
-        def setup(self, stage: Literal["fit", "validate", "test", "predict"]):
-        dataset_settings = self._base_dataset_settings
-        if stage in ("fit", "validate"):
-            self._setup_fit(dataset_settings)
-        elif stage == "test":
-            self._setup_test(dataset_settings)
-        elif stage == "predict":
-            self._setup_predict(dataset_settings)
-        else:
-            raise NotImplementedError(f"{stage} stage")
-        # Let's just use last timepoints to start with
-        # Random shuffle 
 
-        # self.train_datapaths = ...
-        # self.val_datapath = self.val_dataset
+        self.train_indices, self.val_indices = train_test_split(self.indices, test_size=self.split_ratio)
+
+    def setup(self, stage: str):
+        if stage == "fit" or stage == "train":
+            self.dataset = MarlinDataset(self.data_paths, self.train_indices)
+        elif stage == "val" or stage == "validate":
+            self.dataset = MarlinDataset(self.data_paths, self.val_indices)
+        elif stage == "predict":
+        NotImplementedError("This method is not implemented")
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset,
+            shuffle=True,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.prefetch_factor)
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset,
+            shuffle=False,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.prefetch_factor)
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            prefetch_factor=self.prefetch_factor)
+
 #%%
 
 HEADPATH = '/mnt/efs/aimbl_2025/student_data/S-GL/'
