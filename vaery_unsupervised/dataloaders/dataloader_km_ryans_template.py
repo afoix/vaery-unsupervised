@@ -183,6 +183,23 @@ def get_crop_mean_stdev(sdata,data_name, crop_size =128):
     
     return all_crops.mean(axis=(0,2,3)), all_crops.std(axis=(0,2,3))
 
+def transpose_polygon_to_image(geom, size):
+    if geom.is_empty:
+        return np.zeros((size, size), dtype=bool), (np.nan, np.nan)
+
+    # centroid (x, y). Note: x ~ columns, y ~ rows
+    cx, cy = geom.centroid.x, geom.centroid.y
+    half = size / 2.0
+
+    # crop window bounds in original coords (float)
+    x_min = cx - half
+    y_min = cy - half
+
+    # translate geometry so that (x_min, y_min) maps to (0, 0) in the mask frame
+    g = translate(geom, xoff=-x_min, yoff=-y_min)
+
+    return g
+
 
 _logger = logging.getLogger("lightning.pytorch") #????
 
@@ -422,168 +439,3 @@ class SpatProteomicDataModule(LightningDataModule):
             # prefetch_factor=self.prefetch_factor
         )
     
-#%% testing
-prefix = "/mnt/efs/aimbl_2025/student_data/S-KM/001_Used_Zarrs/onlybatch1/"
-suffix = "_sdata_at"
-name_list = ["450","453","456_2","457","493_2", "543_2"] 
-file_list = [prefix + name + suffix for name in name_list]
-file_list
-
-# means_stddev_dict = {}
-# for data_name in name_list:
-#     file_name = prefix + data_name + suffix 
-#     sdata = sd.read_zarr(file_name)
-#     mean, stddev = get_crop_mean_stdev(sdata,data_name)
-#     means_stddev_dict[data_name] = (mean, stddev)
-#%%
-means_stddev_dict = DATASET_NORM_DICT
-#%%
-
-dataset = SpatProteomicsDataset(
-    file_list=file_list,
-    patient_id_list=name_list,
-    masking_function=simple_masking,
-    dataset_normalisation_dict=means_stddev_dict,
-    transform_input=None,
-    transform_both = None,
-    train_val_split=0.9,
-    polygon_sdata_name='affine_transformed',
-    seed=42,
-    train=True,
-)
-#%%
-len(dataset)
-# %%
-def transpose_polygon_to_image(geom, size):
-    if geom.is_empty:
-        return np.zeros((size, size), dtype=bool), (np.nan, np.nan)
-
-    # centroid (x, y). Note: x ~ columns, y ~ rows
-    cx, cy = geom.centroid.x, geom.centroid.y
-    half = size / 2.0
-
-    # crop window bounds in original coords (float)
-    x_min = cx - half
-    y_min = cy - half
-
-    # translate geometry so that (x_min, y_min) maps to (0, 0) in the mask frame
-    g = translate(geom, xoff=-x_min, yoff=-y_min)
-
-    return g
-#%%
-import matplotlib.pyplot as plt
-# %%
-def plot_dataloader_output(data_dict, figsize=(20, 10)):
-    """Plot images from data loader output, showing last 3 channels as RGB."""
-    
-    image_keys = [k for k in ["raw", "input", "target"] if k in data_dict]
-    fig, axes = plt.subplots(1, len(image_keys), figsize=figsize)
-    if len(image_keys) == 1:
-        axes = [axes]
-    
-    for ax, key in zip(axes, image_keys):
-        # Convert tensor to numpy and take last 3 channels: (4,y,x) -> (y,x,3)
-        img = data_dict[key].detach().cpu().numpy()[-3:].transpose(1, 2, 0)
-        
-        # Normalize to [0,1] for display
-        img = (img - img.min()) / (img.max() - img.min() + 1e-8)
-        
-        ax.imshow(img)
-        ax.set_title(key.capitalize())
-        ax.axis('off')
-    
-    plt.tight_layout()
-    plt.show()
-
-sdata = dataset.datasets[0]
-mean = sdata["czi_450"].mean(dim = ['y','x'])
-std = sdata["czi_450"].std(dim = ['y','x'])
-# %%
-# transforms = [affine, flips, shear, gauss_noise, smoothing, intensity, variation]
-# %%
-for i in range(600)[::20]:
-    print(dataset[i]["raw"].mean(axis=(1,2)))
-# %%
-import monai
-import monai.transforms as transforms
-# %%
-transform_both = [
-    transforms.RandAffine(prob=0.5, 
-        rotate_range=3.14, 
-        shear_range=(0,0,0), 
-        translate_range=(0,20,20), 
-        scale_range=None,   
-        padding_mode="zeros",
-        spatial_size=(128,128)),
-    transforms.RandFlip(prob = 0.5,
-                                spatial_axis = [-1], 
-                            ),]
-
-transform_input = [
-    transforms.RandGaussianNoise(
-        prob = 0.5,
-        mean = 0,
-        std = 1
-    ),
-]
-# %%
-transformed_dataset = SpatProteomicsDataset(
-    file_list=file_list,
-    patient_id_list=name_list,
-    masking_function=simple_masking,
-    dataset_normalisation_dict=means_stddev_dict,
-    transform_input=transform_input,
-    transform_both = transform_both,
-    train_val_split=0.9,
-    polygon_sdata_name='affine_transformed',
-    seed=42,
-    train=True,
-)
-# %%
-for i in np.random.randint(0, len(transformed_dataset), 10):
-    x = transformed_dataset[i]
-    plot_dataloader_output(x)
-
-# %%
-lightningmodule = SpatProteomicDataModule(
-    data_paths=file_list,
-    patient_id_list=name_list,
-    masking_function=simple_masking,
-    dataset_normalisation_dict=means_stddev_dict,
-    transform_input=transform_input,
-    transform_both = transform_both,
-    polygon_sdata_name='affine_transformed',
-#     num_workers=2,
-#     batch_size=4,
-#     prefetch_factor=None,
-#     pin_memory=False,
-)
-lightningmodule.setup("train")
-# %%
-loader = DataLoader(
-    lightningmodule.dataset,
-    batch_size=4,
-    shuffle = False
-)
-for batch in loader:
-    tes_batch = batch
-    break
-#%%
-tes_batch["raw"].shape
-# %%
-loader = lightningmodule.train_dataloader()
-#%%
-for batch in loader:
-    tes_batch = batch
-    break
-tes_batch
-
-# %%
-def plot_batch_sample(batch_dict, figsize=(12, 4)):
-    """Plot single sample from batched data loader output."""
-    for idx in range(len(batch_dict["raw"])):
-        sample = {k: v[idx] for k, v in batch_dict.items() if k != "metadata"}
-        plot_dataloader_output(sample, figsize)
-
-plot_batch_sample(tes_batch)
-# %%
