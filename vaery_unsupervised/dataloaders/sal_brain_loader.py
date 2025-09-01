@@ -11,6 +11,8 @@ from typing import Tuple, Union, List
 
 _logger = logging.getLogger("lightning.pytorch")
 
+_db_log = logging.getLogger("func_logger")
+
 class SalBrainDataModule(L.LightningDataModule):
     """
     Notes:
@@ -113,20 +115,24 @@ class SalBrainDataset(Dataset):
         ) as dataset:
             self.volume = dataset["0/0/0/0"] # dims is (1, C, Z, Y, X), (1, 68, 530, 1189, 585)
             self.channel_names = dataset["0/0/0"].channel_names
-        self.mask = self.volume[0, mask_channel]
+        self.mask = self.volume[0, mask_channel].copy().astype(bool)
         self.bounding_box = get_bounding_box(self.mask)
         self.volume_shape = self.volume.shape
+        self.exclude_channels = [4, 5]
         self.indices = random_patch_sampler(self.bounding_box, 
                                             self.patch_size, 
                                             num_samples=batch_size,  # *100??
                                             binary_mask=self.mask)
 
+        self.logger = _db_log
+
     def __len__(self):
         return len(self.indices)
     
-    def __getitem__(self, index):
+    def __getitem__(self, 
+                    index):
         return self.volume[0, 
-                           :, 
+                           [c for c in range(self.volume.shape[1]) if c not in self.exclude_channels], 
                            self.indices[index][0]:self.indices[index][1], 
                            self.indices[index][2]:self.indices[index][3], 
                            self.indices[index][4]:self.indices[index][5]]
@@ -156,7 +162,7 @@ def get_bounding_box(brainary_mask: np.array, pad: int=0) -> Tuple:
 def random_patch_sampler(bbox: Tuple, 
                         patch_size: Union[List, Tuple, int], 
                         num_samples: int, 
-                        min_coverage: float=0.5,
+                        min_coverage: float=0.4,
                         binary_mask: np.array=None) -> List[Tuple]:
     """
     Sample random patches from the given bounding box. 
@@ -189,11 +195,13 @@ def random_patch_sampler(bbox: Tuple,
 
         if binary_mask is not None:
             coverage = np.sum(binary_mask[z_start:z_end, y_start:y_end, x_start:x_end])/(patch_size[0] * patch_size[1] * patch_size[2])
+            _db_log.debug(f"Patch {i}: coverage {coverage:.2f}")
             if coverage < min_coverage:
+                _db_log.debug("Skipping patch due to insufficient coverage")
                 continue
-
-        patches.append((z_start, z_end,
-                        y_start, y_end,
-                        x_start, x_end))
-        i += 1
+            else:
+                patches.append((z_start, z_end,
+                                y_start, y_end,
+                                x_start, x_end))
+                i += 1
     return patches
