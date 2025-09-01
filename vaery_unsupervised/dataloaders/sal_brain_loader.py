@@ -5,7 +5,7 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from iohub import open_ome_zarr
 import numpy as np
-from monai.transforms import RandSpatialCropSamples
+#from monai.transforms import RandSpatialCropSamples
 
 from typing import Tuple, Union, List
 
@@ -23,14 +23,14 @@ class SalBrainDataModule(L.LightningDataModule):
     
     def __init__(self, 
                  data_path: str="/home/jnc2161/mbl/registered_salamander_data.zarr",
-                 batch_size: int=32, 
+                 batch_size: int=9, 
                  patch_size: Union[Tuple, List]=(32, 32, 32), 
                  normalizations: List=[], 
                  augmentations: List=[], 
                  pin_memory: bool=False,
                  num_workers: int=32, 
                  prefetch_factor: int=2,
-                 persistent_workers: bool=True,
+                 persistent_workers: bool=True
                  ):
         
         super().__init__()
@@ -62,7 +62,7 @@ class SalBrainDataModule(L.LightningDataModule):
         else:
             raise ValueError("Stage must be fit/train, val/validate, or predict.")
 
-    def train_dataloader(self, ):
+    def train_dataloader(self):
         return DataLoader(self.dataset, 
                           shuffle=True, 
                           batch_size=self.batch_size, 
@@ -96,12 +96,13 @@ class SalBrainDataset(Dataset):
     def __init__(self, 
                  data_path: str, 
                  batch_size: int, 
-                 patch_size: Union[List, Tuple]
-                #  normalizations: List=[], 
-                #  augmentations: List=[], 
+                 patch_size: Union[List, Tuple], 
+                 mask_channel: int=1,
+                 normalizations: List=[], 
+                 augmentations: List=[], 
                  ):
         
-        super().__init__(self)
+        super().__init__()
 
         self.data_path = data_path
         self.patch_size = patch_size
@@ -112,14 +113,13 @@ class SalBrainDataset(Dataset):
         ) as dataset:
             self.volume = dataset["0/0/0/0"] # dims is (1, C, Z, Y, X), (1, 68, 530, 1189, 585)
             self.channel_names = dataset["0/0/0"].channel_names
-
-        self.mask_chan_ind = [i for i, chan in enumerate(self.channel_names) if "mask" in chan]
-        assert len(self.mask_chan_ind) == 0, f"Multiple channel names contain the word mask: {self.mask_chan_ind}. Binary mask ambiguous"
-        self.mask_chan_ind = self.mask_chan_ind[0]
-        self.bounding_box = self.get_bounding_box(self.volume[0, self.mask_chan_ind])
-        
+        self.mask = self.volume[0, mask_channel]
+        self.bounding_box = get_bounding_box(self.mask)
         self.volume_shape = self.volume.shape
-        self.indices = random_patch_sampler(self.bounding_box, self.patch_size, batch_size*10)
+        self.indices = random_patch_sampler(self.bounding_box, 
+                                            self.patch_size, 
+                                            num_samples=batch_size,  # *100??
+                                            binary_mask=self.mask)
 
     def __len__(self):
         return len(self.indices)
@@ -155,7 +155,9 @@ def get_bounding_box(brainary_mask: np.array, pad: int=0) -> Tuple:
 
 def random_patch_sampler(bbox: Tuple, 
                         patch_size: Union[List, Tuple, int], 
-                        num_samples: int) -> List[Tuple]:
+                        num_samples: int, 
+                        min_coverage: float=0.5,
+                        binary_mask: np.array=None) -> List[Tuple]:
     """
     Sample random patches from the given bounding box. 
     Parameters
@@ -176,11 +178,22 @@ def random_patch_sampler(bbox: Tuple,
         patch_size = (patch_size,) * 3
 
     patches = []
-    for _ in range(num_samples):
+    i = 0
+    while i < num_samples:
         z_start = np.random.randint(bbox[0], bbox[1] - patch_size[0])
         y_start = np.random.randint(bbox[2], bbox[3] - patch_size[1])
         x_start = np.random.randint(bbox[4], bbox[5] - patch_size[2])
-        patches.append((z_start, z_start + patch_size[0],
-                            y_start, y_start + patch_size[1],
-                            x_start, x_start + patch_size[2]))
+        z_end = z_start + patch_size[0]
+        y_end = y_start + patch_size[1]
+        x_end = x_start + patch_size[2]
+
+        if binary_mask is not None:
+            coverage = np.sum(binary_mask[z_start:z_end, y_start:y_end, x_start:x_end])/(patch_size[0] * patch_size[1] * patch_size[2])
+            if coverage < min_coverage:
+                continue
+
+        patches.append((z_start, z_end,
+                        y_start, y_end,
+                        x_start, x_end))
+        i += 1
     return patches
