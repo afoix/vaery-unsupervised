@@ -30,14 +30,14 @@ class SalBrainDataModule(L.LightningDataModule):
         self.augmentations = augmentations
         self.pin_memory = pin_memory
         self.num_workers = num_workers
+        self.dataset = SalBrainDataset(self.data_path, self.patch_size)
 
         def train_val_split():
 
 
         def setup(self, stage: str):
 
-            self.dataset = SalBrainDataset(self.data_path, 
-                                           self.patch_size)
+
 
             if stage == "fit" or stage == "train":
                 
@@ -86,18 +86,24 @@ class SalBrainDataset(Dataset):
         ) as dataset:
             self.volume = dataset["0/0/0/0"]
             self.channel_names = dataset["0/0/0"].channel_names
-            self.bounding_box = get_bounding_box(self, )
 
-
+        self.mask_chan_ind = [i for i, chan in enumerate(self.channel_names) if "mask" in chan]
+        assert len(self.mask_chan_ind) == 0, f"Multiple channel names contain the word mask: {self.mask_chan_ind}. Binary mask ambiguous"
+        self.mask_chan_ind = self.mask_chan_ind[0]
+        self.bounding_box = get_bounding_box(self, self.volume[0, self.mask_chan_ind])
         self.volume_shape = self.volume.shape
-
-
-    def get_bounding_box(self, brain_mask: np.array):
-
-
-
+    
     def __len__(self):
         return self.num_samples
-    
-    def _computer_
+
+
+def get_bounding_box(brainary_mask: np.array) -> Tuple:
+
+    z_coords, y_coords, x_coords = np.where(brainary_mask > 0)
+    z_min, z_max = np.min(z_coords), np.max(z_coords)
+    y_min, y_max = np.min(y_coords), np.max(y_coords)
+    x_min, x_max = np.min(x_coords), np.max(x_coords)
+
+    return (z_min, z_max, y_min, y_max, x_min, x_max)
+
 
