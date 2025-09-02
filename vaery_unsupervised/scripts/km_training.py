@@ -36,7 +36,7 @@ lightning_module = SpatProteomicDataModule(patient_id_list= patient_id_list,
                                            data_paths=data_paths, 
                                            polygon_sdata_name="affine_transformed",
                                            masking_function=simple_masking,
-                                           batch_size=60,
+                                           batch_size=10,
                                            num_workers=1,
                                            crop_size = 128,
                                            dataset_normalisation_dict= DATASET_NORM_DICT,
@@ -93,8 +93,7 @@ def main(*args, **kwargs):
 
 
 
-#%%
-main()
+
 # %% good practice when running python file
 if __name__ == "__main__":
    main()

@@ -68,8 +68,8 @@ class SpatialVAE(LightningModule):
     #     self.log("val/target", target[0])
     #     self.log("val/reconstruction", x_hat[0])
         tensorboard = self.logger.experiment
-        tensorboard.add_image("val/target", target[0])
-        tensorboard.add_image("val/reconstruction", x_hat[0])
+        tensorboard.add_image("val/target", target[0].detach().cpu().numpy())
+        tensorboard.add_image("val/reconstruction", x_hat[0].detach().cpu().numpy())
 
 
 

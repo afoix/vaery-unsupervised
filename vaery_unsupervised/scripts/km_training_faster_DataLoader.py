@@ -9,6 +9,13 @@ from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
 )
 from vaery_unsupervised.km_utils import plot_batch_sample,plot_dataloader_output
 import monai.transforms as transforms
+from vaery_unsupervised.networks.LitVAE_km import SpatialVAE
+import lightning
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.loggers import TensorBoardLogger
+from pathlib import Path
+
 out_path = Path("/mnt/efs/aimbl_2025/student_data/S-KM/")
 
 transform_both = [
@@ -42,19 +49,53 @@ dataset_zarr = SpatProteoDatasetZarr(
 )
 plot_dataloader_output(dataset_zarr[0])
 # %%
-lightning = SpatProtoZarrDataModule(
+lightning_module = SpatProtoZarrDataModule(
     out_path/"converted_crops_with_metadata.zarr",
     masking_function=simple_masking,
     dataset_normalisation_dict=DATASET_NORM_DICT,
     transform_both=transform_both,
     transform_input=transform_input,
     num_workers=8,
-    batch_size=4,
+    batch_size=16,
 )
-lightning.setup("train")
-loader = lightning.train_dataloader()
+lightning_module.setup("train")
+
+loader = lightning_module.train_dataloader()
 # %% looking at a batch
 for i,batch in enumerate(loader):
     plot_batch_sample(batch)    
     break
 # %%
+batch["input"][:,[1,2,3],:,:].shape
+
+spatialmodel = SpatialVAE(n_chan=3,latent_size=128, lr = 0.001, beta = 0.01)
+spatialmodel(batch["input"][:,[1,2,3],:,:])[0].shape
+
+#%%
+logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-KM/logs")
+logging_path.mkdir(exist_ok=True)
+
+
+logger = TensorBoardLogger(save_dir=logging_path, name = "test_fasterloader")
+
+def main(*args, **kwargs):
+
+    trainer = lightning.Trainer(
+        max_epochs = 1, 
+        accelerator = "gpu", 
+        precision = "16-mixed", 
+        logger=logger,
+        callbacks=[ModelCheckpoint(save_last=True,save_top_k=8,monitor='val/loss',every_n_epochs=1),],
+        log_every_n_steps=5
+    )
+    #callback = Callback.on_save_checkpoint(trainer = trainer, pl_module = lightning_module, checkpoint = )
+
+
+    # run training and validation
+    trainer.fit(model = spatialmodel , datamodule = lightning_module)
+    trainer.validate(model = spatialmodel , datamodule = lightning_module)
+
+#%%
+if __name__ == "__main__":
+   main()
+
