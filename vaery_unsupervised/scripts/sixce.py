@@ -19,9 +19,17 @@ from lightning.pytorch.loggers import NeptuneLogger
 # from lightning.pytorch.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pathlib import Path
+import warnings
+
+import umap
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Optional, Union, Tuple
+
 
 # Set mode
-MODE = "predict" # predict or train
+RUN_INFERENCE = True
+checkpoint_to_load = "SIXCE-3/last.ckpt" # str: run_id/checkpoint_file_name.ckpt"
 
 # Neptune experiment description
 EXPERIMENT_DESCRIPTION = (f"SIXCE: Pilot")
@@ -31,11 +39,12 @@ with open(NEPTUNE_TOKEN_PATH, "r") as f:
 
 
 # Paths ----------------------------------------------------------------------------------------------------------------
-DATA_PATH = '/dgx1nas1/storage/data/kamal/vegas_data'
+DATA_PATH = '/dgx1nas1/storage/data/kamal/sixce_data'
 DATAFRAMES_PATH = os.path.join(DATA_PATH, 'dataframes')
-IMAGE_PATH = os.path.join(DATA_PATH, 'mosaics')
-SAVED_DATA_PATH = os.path.join(DATA_PATH, "_saved_data_")
+SAVED_DATA_PATH = os.path.join(DATA_PATH, "saved_datasets")
 OME_ZARR_PATH = '/raid/data/temp_kamal/merged_mosaics.ome.zarr'
+CHECKPOINT_PATH = os.path.join(DATA_PATH, "checkpoints")
+SAVED_INFERENCE_PATH = os.path.join(DATA_PATH, "inferences")
 
 # Training dataset parameters (can be ignored if loading existing dataset) ---------------------------------------------
 RANDOM_SUBSET = 2000 # if -1, uses all samples. Note: existing pt dataset with 0_001k cells only contains 1 gene
@@ -61,8 +70,8 @@ LEARNING_RATE = 0.0005
 EPOCHS = 100
 BATCH_SIZE = 50
 N_WORKERS = 10
-Z_DIM = 50
-
+LOSS_TEMPERATURE=0.1
+VALIDATION_FRACTION=0.2
 # Loss function parameters ---------------------------------------------------------------------------------------------
 
 # Experiment variables -------------------------------------------------------------------------------------------------
@@ -88,7 +97,10 @@ saved_dataset_path = os.path.join(
 # Load existing dataset if possible
 if os.path.exists(saved_dataset_path):
     print("Loading existing Dataset...")
-    dataset = torch.load(saved_dataset_path)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        dataset = torch.load(saved_dataset_path)
+
     # Extracting stored variables
     N_GENES = dataset.n_genes
     INPUT_DIM = dataset.input_dim
@@ -166,106 +178,126 @@ else:
     cell_boundaries_df_path = os.path.join(DATAFRAMES_PATH, "cell_boundaries.parquet")
     cell_boundaries_df = pd.read_parquet(cell_boundaries_df_path)
 
+datamodule_config = {
+            "data_path": OME_ZARR_PATH,
+            "dataset_export_path": saved_dataset_path,
+            "batch_size": BATCH_SIZE,
+            "prefetch_factor": 2,
+            "pin_memory": False,
+            "persistent_workers": False,
+            "n_workers": N_WORKERS,
+            "val_fraction": VALIDATION_FRACTION,
+            "zarr_attributes": zarr_attributes,
+            "transcripts_df": transcript_df,
+            "cell_metadata_df": cell_metadata_df,
+            "cell_boundary_df": cell_boundaries_df,
+            "input_dim": INPUT_DIM,
+            "n_genes": N_GENES,
+            "existing_dataset": dataset,
+            "selected_stains": STAINS,
+            "n_masks": N_MASKS,
+            "padding": PADDING,
+            "apply_data_augmentation": APPLY_DATA_AUGMENTATION,
+            "tensor_type": TENSOR_TYPE,
+            "include_stains": LAZY_LOAD,
+            "representation_type": SPOT_REPRESENTATION_TYPE,
+            "gaussian_patch_sigma": SPOT_PSF_GAUSSIAN_SIGMA,
+            "gaussian_kernel_size": SPOT_PSF_GAUSSIAN_KERNEL_SIZE,
+            "psf_normalization": SPOT_PSF_PX_VAL_NORMALIZATION_METHOD,
+            "random_subset": RANDOM_SUBSET,
+            "peak_norm_peak_val": PEAK_NORMALIZATION_PEAK_VALUE,
+            "circular_psf": CIRCULAR_PSF,
+            "global_seed": GLOBAL_SEED
+}
 
-
+logged_dataset_config = {
+            **datamodule_config,
+            "gene_threshold": GENE_COUNT_THRESHOLD,
+            "tensor_type": str(TENSOR_TYPE),
+            "stains": ",".join(STAINS)
+        }
 
 def main():
     pl.seed_everything(GLOBAL_SEED, workers=True)
 
-    dm = SixceDataModule(
-        data_path=OME_ZARR_PATH,
-        dataset_export_path=saved_dataset_path,
-        batch_size=BATCH_SIZE,
-        prefetch_factor=2,
-        pin_memory=False,
-        persistent_workers=False,
-        n_workers=N_WORKERS,
-        val_fraction=0.2,
-        zarr_attributes=zarr_attributes,
-        transcripts_df=transcript_df,
-        cell_metadata_df=cell_metadata_df,
-        cell_boundary_df=cell_boundaries_df,
-        input_dim=INPUT_DIM,
-        n_genes=N_GENES,
-        existing_dataset=dataset,
-        selected_stains=STAINS,
-        n_masks=N_MASKS,
-        padding=PADDING,
-        apply_data_augmentation=APPLY_DATA_AUGMENTATION,
-        tensor_type=TENSOR_TYPE,
-        include_stains=LAZY_LOAD,
-        representation_type=SPOT_REPRESENTATION_TYPE,
-        gaussian_patch_sigma=SPOT_PSF_GAUSSIAN_SIGMA,
-        gaussian_kernel_size=SPOT_PSF_GAUSSIAN_KERNEL_SIZE,
-        psf_normalization=SPOT_PSF_PX_VAL_NORMALIZATION_METHOD,
-        random_subset=RANDOM_SUBSET,
-        peak_norm_peak_val=PEAK_NORMALIZATION_PEAK_VALUE,
-        circular_psf=CIRCULAR_PSF,
-        global_seed=GLOBAL_SEED
-    )
-
+    dm = SixceDataModule(**datamodule_config)
     encoder = ResNetEncoder(
         backbone="resnet18",
         in_channels=N_GENES + N_STAINS,
         spatial_dims=2,
         embedding_dim=512,
         mlp_hidden_dims=768,
-        projection_dim=128,
-        pretrained=False
+        projection_dim=128
     )
 
-    model = ContrastiveModule(encoder=encoder, lr=LEARNING_RATE, optimizer=None, temperature=0.1)
+    if not RUN_INFERENCE:
+        model = ContrastiveModule(encoder=encoder, lr=LEARNING_RATE, optimizer=None, temperature=LOSS_TEMPERATURE)
 
-    # Logging to Neptune
-    logger = NeptuneLogger(
-        api_key=api_token,
-        project="BroadImagingPlatform/SIXCE",
-        tags=["training", "resnet18"],
-        log_model_checkpoints=False,
-    )
+        # Initialize Neptune
+        logger = NeptuneLogger(
+            api_key=api_token,
+            project="BroadImagingPlatform/SIXCE",
+            tags=["training", "resnet18"],
+            log_model_checkpoints=False,
+        )
 
-    neptune_run = logger.experiment
-    neptune_run["Experiment"] = EXPERIMENT_DESCRIPTION
-    neptune_run["sys/tags"].add("Initial testing with ResNet18")
-    run_id = neptune_run["sys/id"].fetch()
+        neptune_run = logger.experiment
+        neptune_run["Experiment"] = EXPERIMENT_DESCRIPTION
+        run_id = neptune_run["sys/id"].fetch()
+        neptune_run["dataset_config"] = logged_dataset_config
 
-    neptune_run["dataset_config"] = {
-        "random_subset": RANDOM_SUBSET,
-        "apply_data_augmentation": APPLY_DATA_AUGMENTATION,
-        "input_dim": INPUT_DIM,
-        "n_genes": N_GENES,
-        "padding": PADDING,
-        "gene_threshold": GENE_COUNT_THRESHOLD,
-        "tensor_type": str(TENSOR_TYPE),
-        "stains": ",".join(STAINS),
-        "spot_representation_type": SPOT_REPRESENTATION_TYPE,
-        "spot_psf_gaussian_sigma": SPOT_PSF_GAUSSIAN_SIGMA,
-        "spot_psf_gaussian_kernel_size": SPOT_PSF_GAUSSIAN_KERNEL_SIZE,
-        "spot_psf_px_val_normalization_method": SPOT_PSF_PX_VAL_NORMALIZATION_METHOD,
-        "peak_normalization_peak_value": PEAK_NORMALIZATION_PEAK_VALUE,
-        "circular_psf": CIRCULAR_PSF
-    }
+        # Local checkpoints
+        current_checkpoint_path = os.path.join(CHECKPOINT_PATH, run_id)
+        os.mkdir(current_checkpoint_path)
 
-    # Local checkpoints
-    checkpoint_path = f"/dgx1nas1/storage/data/kamal/vegas_data/checkpoints/{run_id}"
-    os.mkdir(checkpoint_path)
+        trainer = pl.Trainer(
+            accelerator="gpu",
+            num_nodes=1,
+            precision="16-mixed",
+            strategy="auto",
+            max_epochs=EPOCHS,
+            logger=logger,
+            devices=1,
+            # fast_dev_run=True, #Only when debugging
+            callbacks = [ModelCheckpoint( dirpath=current_checkpoint_path,
+                filename="{epoch}-{step}", save_last=True, monitor="loss/val", save_top_k=8, every_n_epochs=1)],
+        )
 
-    trainer = pl.Trainer(
-        accelerator="gpu",
-        num_nodes=1,
-        precision="16-mixed",
-        strategy="auto",
-        max_epochs=EPOCHS,
-        logger=logger,
-        devices=1,
-        # fast_dev_run=True, #Only when debugging
-        callbacks = [ModelCheckpoint( dirpath=checkpoint_path,
-            filename="{epoch}-{step}", save_last=True, monitor="loss/val", save_top_k=8, every_n_epochs=1)],
-    )
+        # Train
+        dm.setup(stage="fit")
+        trainer.fit(model, datamodule=dm)
 
-    # Train
-    dm.setup(stage="fit")
-    trainer.fit(model, datamodule=dm)
+    elif checkpoint_to_load is not None:
+        model_path = os.path.join(CHECKPOINT_PATH, checkpoint_to_load)
+        model = ContrastiveModule.load_from_checkpoint(model_path, encoder=encoder)
+        model_name = checkpoint_to_load.split('/')[0]
+
+        dm.setup(stage="predict")
+
+        # Create trainer for inference
+        trainer = pl.Trainer(
+            accelerator="gpu",
+            num_nodes=1,
+            precision="16-mixed",
+            strategy="auto",
+            max_epochs=EPOCHS,
+            logger=False,
+            devices=1,
+        )
+
+        # Run prediction
+        print("Running inference...")
+        predictions = trainer.predict(model, datamodule=dm)
+
+        # Extract both embeddings and projections
+        embeddings = torch.cat([pred['embeddings'] for pred in predictions], dim=0).numpy()
+        projections = torch.cat([pred['projections'] for pred in predictions], dim=0).numpy()
+
+        # Save inference
+        np.save(f"{SAVED_INFERENCE_PATH}/{model_name}_embeddings.npy", embeddings)
+        np.save(f"{SAVED_INFERENCE_PATH}/{model_name}_projections.npy", projections)
+
+
 
 
 if __name__ == "__main__":
