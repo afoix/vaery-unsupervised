@@ -126,6 +126,7 @@ class ContrastiveModule(LightningModule):
         self.loss = loss
         self.lr = lr
         self.optimizer = optimizer
+    
     def forward(
             self,
             x: Tensor
@@ -162,8 +163,8 @@ class ContrastiveModule(LightningModule):
     ) -> Tensor:
         anchor, positive = batch["anchor"], batch["positive"]
         # Get the embedding and the projection
-        _, anchor_proj = self(anchor)
-        _, positive_proj = self(positive)
+        _, anchor_proj = self.encoder(anchor)
+        _, positive_proj = self.encoder(positive)
 
         #Compute the loss with the projections pairs
         #FIXME: evaluate the use of the SelfSupervisedLoss and the NTXentLoss
@@ -182,6 +183,9 @@ class ContrastiveModule(LightningModule):
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
         # self._log_metrics(loss, anchor, positive, "train")
+
+        #adding self.log
+        self.log("train/loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
@@ -203,7 +207,10 @@ class ContrastiveModule(LightningModule):
         loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        # self._log_metrics(loss, anchor, positive, "val")
+        self._log_metrics(loss, anchor, positive, "val")
+
+        ##adding 
+        # self.log("val/loss", loss.item(), on_epoch=True, prog_bar=True)
         return loss
 
 
@@ -212,7 +219,7 @@ class ContrastiveModule(LightningModule):
     ):
         self.log(
             f"loss/{stage}",
-            loss.to(self.device),
+            loss.item(),
             on_step=True,
             on_epoch=True,
             prog_bar=True,
@@ -224,10 +231,10 @@ class ContrastiveModule(LightningModule):
         cosine_sim_pos = F.cosine_similarity(anchor, positive, dim=1).mean()
         euclidean_dist_pos = F.pairwise_distance(anchor, positive).mean()
 
-        # log_metric_dict = {
-        #     f"metrics/cosine_similarity_positive/{stage}": cosine_sim_pos,
-        #     f"metrics/euclidean_distance_positive/{stage}": euclidean_dist_pos,
-        # }
+        log_metric_dict = {
+            f"metrics/cosine_similarity_positive/{stage}": cosine_sim_pos,
+            f"metrics/euclidean_distance_positive/{stage}": euclidean_dist_pos,
+        }
         # lightning logger to tensorboard (at epoch level)
         self.log_dict(
             log_metric_dict,
