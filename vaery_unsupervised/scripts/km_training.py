@@ -62,6 +62,8 @@ batch["input"][:,[1,2,3],:,:].shape
 from vaery_unsupervised.networks.LitVAE_km import SpatialVAE
 import lightning
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import Callback
+
 # %%
 spatialmodel = SpatialVAE(n_chan=3,latent_size=128, lr = 0.001, beta = 0.001)
 spatialmodel(batch["input"][:,[1,2,3],:,:])[0].shape
@@ -71,20 +73,22 @@ from pathlib import Path
 
 logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-KM/logs")
 logging_path.mkdir(exist_ok=True)
-model_name="vae_2"
 
-logger = TensorBoardLogger(save_dir=logging_path, model_name)
+
+logger = TensorBoardLogger(save_dir=logging_path, name = "vae_3")
 
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(max_epochs = 100, accelerator = "gpu", precision = "16-mixed", logger=logger,
-                                callbacks=[ModelCheckpoint(save_last=True,save_top_k=8,monitor='val/loss',every_n_epochs=1)]
+                                callbacks=[ModelCheckpoint(save_last=True,save_top_k=8,monitor='val/loss',every_n_epochs=1),]
                                 )
+    #callback = Callback.on_save_checkpoint(trainer = trainer, pl_module = lightning_module, checkpoint = )
 
 
     # run training and validation
     trainer.fit(model = spatialmodel , datamodule = lightning_module)
     trainer.validate(model = spatialmodel , datamodule = lightning_module)
+
 
 
 

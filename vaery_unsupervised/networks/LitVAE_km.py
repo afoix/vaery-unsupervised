@@ -1,7 +1,7 @@
 import torch
 from lightning import LightningModule
 
-from .model_VAE_resnet18 import ResNet18Enc, ResNet18Dec
+from .model_VAE_resnet18_km import ResNet18Enc, ResNet18Dec
 
 def model_loss(x, recon_x, z_mean, z_log_var, beta = 1e-3):
   mse = torch.nn.functional.mse_loss(x, recon_x)
@@ -71,8 +71,8 @@ class SpatialVAE(LightningModule):
         tensorboard.add_image("val/target", target[0])
         tensorboard.add_image("val/reconstruction", x_hat[0])
 
-    tensorboard.
-    
+
+
     #return z_mean, z_log_var
 
   def configure_optimizers(self):
