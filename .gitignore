@@ -212,3 +212,6 @@ __marimo__/
 *.zattrs
 *.zgroup
 *.npy
+
+#
+vaery_unsupervised/lightning_logs/
