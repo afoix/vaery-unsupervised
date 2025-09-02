@@ -77,8 +77,10 @@ class ContrastiveHCSDataset(Dataset):
 
         #TODO return the anchor and positive
         return {
-            "anchor": anchor[0][:,None,...],
-            "positive": positive[0][:,None,...],
+            # "anchor": anchor[0][:,None,...],
+            # "positive": positive[0][:,None,...],
+            "anchor": anchor[0],
+            "positive": positive[0],
             # "fov_id": position.name #TODO check if we need the fov_id
         }
     
