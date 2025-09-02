@@ -25,8 +25,8 @@ def plot_dataloader_output(data_dict, figsize=(20, 10)):
     plt.tight_layout()
     plt.show()
 
-def plot_batch_sample(batch_dict, figsize=(12, 4)):
+def plot_batch_sample(batch_dict, figsize=(12, 4), image_keys = ["raw","input","target"]):
     """Plot single sample from batched data loader output."""
     for idx in range(len(batch_dict["raw"])):
-        sample = {k: v[idx] for k, v in batch_dict.items() if k != "metadata"}
+        sample = {k: v[idx] for k, v in batch_dict.items() if k in image_keys}
         plot_dataloader_output(sample, figsize)
