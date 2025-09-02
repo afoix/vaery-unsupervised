@@ -71,11 +71,14 @@ class ContrastiveHCSDataset(Dataset):
         anchor = self.anchor_augmentations(crop_img)
         positive = self.positive_augmentations(anchor)
 
+        # anchor = anchor[:,None,...]
+        # positive = positive[:,None,...]
+
 
         #TODO return the anchor and positive
         return {
-            "anchor": anchor,
-            "positive": positive,
+            "anchor": anchor[0][:,None,...],
+            "positive": positive[0][:,None,...],
             # "fov_id": position.name #TODO check if we need the fov_id
         }
     
