@@ -36,7 +36,7 @@ class ResNetEncoder(nn.Module):
         embedding_dim: int = 512,
         mlp_hidden_dims: int = 768,
         projection_dim: int = 128,
-        pretrained: bool = True,
+        pretrained: bool = False,
         ):
         """
         ResNetEncoder modified with the projection MLP layer for contrastive learning
@@ -139,11 +139,10 @@ class ContrastiveModule(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        # TODO: expose this as an argument to the constructor so we can use different optimizers
         if self.optimizer:
             return self.optimizer(self.parameters(), lr=self.lr)
         else:
-            return torch.optim.Adam(self.parameters(), lr=self.lr)
+            return torch.optim.AdamW(self.parameters(), lr=self.lr) # mkw changed from Adam
 
     def validation_step(self, batch: ContrastiveSample, batch_idx: int) -> Tensor:
         anchor, positive = batch["anchor"], batch["positive"]
@@ -157,7 +156,7 @@ class ContrastiveModule(LightningModule):
         self._log_metrics(loss, anchor_proj, positive_proj, "val")
         return loss
 
-    def prediction_step(self, batch, batch_idx):
+    def predict_step(self, batch, batch_idx):
         images = batch["anchor"]
 
         embedding, projection = self(images)
