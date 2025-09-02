@@ -36,7 +36,8 @@ class SalamanderVAE(LightningModule):
     return self.decode(z), z_mean, z_log_var
 
   def training_step(self, batch, batch_idx):
-    x, _ = batch
+    print(batch.shape)
+    x = batch
     x_hat, z_mean, z_log_var = self(x)
     loss, recon, kld = self.loss(x, x_hat, z_mean, z_log_var)
     self.log("train/loss", loss.item())
@@ -45,7 +46,7 @@ class SalamanderVAE(LightningModule):
     return loss
 
   def validation_step(self, batch, batch_idx):
-    x, _ = batch
+    x = batch
     x_hat, z_mean, z_log_var = self(x)
     loss, recon, kld = self.loss(x, x_hat, z_mean, z_log_var)
     self.log("val/loss", loss.item())

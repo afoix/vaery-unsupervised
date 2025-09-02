@@ -25,14 +25,14 @@ class BasicBlockEnc(nn.Module):
         self.conv1 = nn.Conv3d(in_features, features, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm3d(features)
         self.conv2 = nn.Conv3d(features, features, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(features)
+        self.bn2 = nn.BatchNorm3d(features)
 
         if stride == 1:
             self.shortcut = nn.Identity()
         else:
             self.shortcut = nn.Sequential(
                 nn.Conv3d(in_features, features, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(features)
+                nn.BatchNorm3d(features)
             )
 
     def forward(self, x):
@@ -134,7 +134,7 @@ class ResNet18Dec(nn.Module):
     linear 512 -> z_dim
     """
 
-    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=28):
+    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=32):
         super().__init__()
         self.in_features = 512
         self.nc = nc
@@ -156,7 +156,7 @@ class ResNet18Dec(nn.Module):
         strides = [stride] + [1]*(num_Blocks-1)
         layers = []
         for stride in reversed(strides):
-            layers += [BasicBlockDec(self.in_planes, stride)]
+            layers += [BasicBlockDec(self.in_features, stride)]
         self.in_features = features
         return nn.Sequential(*layers)
 
@@ -169,7 +169,7 @@ class ResNet18Dec(nn.Module):
         x = torch.sigmoid(self.conv1(x))
         b,c,w,h,d = x.shape
         x = self.final_linear(x.view(b,c,w*h*d))
-        return x.view(b,c,self.out_features, self.out_features)
+        return x.view(b,c,self.out_features, self.out_features, self.out_features)
     
     
 class VAEResNet18(nn.Module):

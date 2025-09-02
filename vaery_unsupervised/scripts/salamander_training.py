@@ -8,9 +8,9 @@ from vaery_unsupervised.dataloaders.sal_brain_loader import SalBrainDataModule
 
 def main():
 
-    dataset = SalBrainDataModule(batch_size=9, 
+    dataset = SalBrainDataModule(batch_size=16, 
                                 patch_size=(32, 32, 32), 
-                                num_workers=64)
+                                num_workers=120)
 
     dataset.setup("train")
     train_data = dataset.train_dataloader()
@@ -24,7 +24,7 @@ def main():
                    n_chan=batch_shape[1])
     
     trainer = L.Trainer(accelerator="gpu", 
-                        max_epochs=1)
+                        max_epochs=1000)
     
     logger = TensorBoardLogger("tb_logs", name="my_model")
     trainer = L.Trainer(logger=logger)
@@ -32,11 +32,6 @@ def main():
     trainer.fit(model=model, 
                 train_dataloaders=train_data)
     
-
-    
-
-
-
 
 if __name__ == "__main__":
     main()
