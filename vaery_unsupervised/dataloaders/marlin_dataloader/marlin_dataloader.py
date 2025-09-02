@@ -1,6 +1,4 @@
 #%%
-%load_ext autoreload
-%autoreload 2
 import lightning as L
 from pathlib import Path
 from typing import Callable, Literal, Sequence, Optional
@@ -12,15 +10,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
-T = 60
-# H = 150
-HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
+T = 60 # Number of timepoints
 KEY_FL = 'fluorescence'
 KEY_SEG = 'segmentation'
 
 from monai.transforms import (
-    Flip,
-    Rotate90,
     Compose,
     NormalizeIntensity,
     Lambda,
@@ -35,15 +29,9 @@ def center_image(img):
     out[y_offset:y_offset+h, x_offset:x_offset+w] = img
     return out
 
-
-
-# shift_in_both_chan
+# Shift parameteres
 MEAN_OVER_DATASET = 13
 STD_OVER_DATASET = 11
-transform = Compose([
-    Flip(spatial_axis=0),
-    Rotate90(spatial_axes=(0, 2)),
-])
 
 transforms = Compose([
     NormalizeIntensity(
@@ -53,9 +41,9 @@ transforms = Compose([
         channel_wise=False,
         dtype = np.float32,
     ),
-    Lambda(func=center_image,
-           inv_func=None,
-           track_meta=True)
+    # Lambda(func=center_image,
+    #        inv_func=None,
+    #        track_meta=True)
 ])
 
 class MarlinDataset(Dataset):
@@ -70,32 +58,35 @@ class MarlinDataset(Dataset):
         
     def __len__(self):
         return len(self.metadata)
- # TODO make this a transform
-
+ 
     def __getitem__(self, index: int):
         metadata_sample = self.metadata.iloc[index]
         # Get indices to find files
         gene_id, grna_id, grna_file_trench_index, timepoint = metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
-
-        # Using only the next timepoint
+        # Using only the next timepoint, reset to the first timepoint if chose the last timepoint
         filename = self.data_path / f"{gene_id}/{grna_id}.hdf5"
         with h5py.File(filename, 'r') as f:
             img_fl_anchor = f[KEY_FL][grna_file_trench_index, timepoint]
             img_fl_pos = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
-            img_seg_anchor = f[KEY_SEG][grna_file_trench_index, timepoint]
-            img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
+            # img_seg_anchor = f[KEY_SEG][grna_file_trench_index, timepoint]
+            # img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
 
         # Set your desired output size
         # TODO DECIDE IF INCLUDING SEG
-        img_fl_anchor = self.center_image(img_fl_anchor)
-        img_fl_pos = self.center_image(img_fl_pos)
-        img_seg_anchor = self.center_image(img_seg_anchor)
-        img_seg_pos = self.center_image(img_seg_pos)
+        # TODO make this a transform
+        img_fl_anchor = center_image(img_fl_anchor)
+        img_fl_pos = center_image(img_fl_pos)
+        # img_seg_anchor = self.center_image(img_seg_anchor)
+        # img_seg_pos = self.center_image(img_seg_pos)
 
-        # TODO: Apply transformations!
-        if self.transform:
-            NotImplementedError("Transformations are not implemented")
+        img_fl_anchor = img_fl_anchor[None,None,...]
+        img_fl_pos = img_fl_pos[None,None,...]
+        
+        if self.transform: # TODO ADD CENTERING HERE!
+            img_fl_anchor = self.transform(img_fl_anchor)
+            img_fl_pos = self.transform(img_fl_pos)
 
+        # TODO: CASE FOR TESTING/PREDICTING
         # if self.train_mode:
         return {'anchor': img_fl_anchor, 'positive': img_fl_pos}
         # else:
@@ -120,6 +111,8 @@ class MarlinDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.transforms = transforms
+
+        # Open the metadata
         COLS_TO_LOAD = ['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']
         self.metadata = (pd
             .read_pickle(self.metadata_path)
@@ -127,8 +120,7 @@ class MarlinDataModule(L.LightningDataModule):
         )
 
     def _prepare_data(self):
-        # Logica para abrir la metadta dataframe, filter y shuffle and split
-        # indices_all = self.metadata.index.tolist()
+        # Shuffle and split the metadata
         indices_shuffled = np.random.permutation(self.metadata.index.tolist())
         indices_train = indices_shuffled[:int(len(indices_shuffled) * self.split_ratio)]
         indices_val = indices_shuffled[int(len(indices_shuffled) * self.split_ratio):]
@@ -140,19 +132,19 @@ class MarlinDataModule(L.LightningDataModule):
             self.dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata_train,
-                transform=...
+                transform=self.transforms
             )
         elif stage == 'validate':
             self.dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata_val,
-                transforms=...
+                transforms=self.transforms
             )
         else: # 'test' or 'predict'
             self.dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata,
-                transform=...
+                transform=self.transforms
             )
 
     def train_dataloader(self): 
@@ -185,51 +177,3 @@ class MarlinDataModule(L.LightningDataModule):
             pin_memory=True,
             prefetch_factor=self.prefetch_factor
         )
-
-#%%
-HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
-data_module = MarlinDataModule(
-    data_path=HEADPATH/'Ecoli_lDE20_Exps-0-1/',
-    metadata_path=HEADPATH/'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl',
-    split_ratio=0.8,
-    batch_size=1024,
-    num_workers=4,
-    prefetch_factor=2,
-    transforms=[...]
-)
-
-#%%
-data_module._prepare_data()
-#%%
-data_module.setup(stage='fit')
-
-# Transforms
- # Reflection over either axis
- # Shuffling of cells over the trench?
- # 
-# %%
-img_anchor, img_pos =data_module.dataset[45000].values()
-
-fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-ax[0].imshow(img_anchor, cmap='gray')
-ax[0].set_title('Anchor Image')
-ax[0].axis('off')
-ax[1].imshow(img_pos, cmap='gray')
-ax[1].set_title('Positive Image')
-ax[1].axis('off')
-plt.show()
-#%%
-
-# transforms(img_anchor)
-center_image(img_anchor)
-#%%
-metadata_sample = data_module.dataset.metadata.iloc[3001]
-gene_id, grna_id, grna_file_trench_index, timepoint = metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
-filename = data_module.dataset.data_path / f"{gene_id}/{grna_id}.hdf5"
-with h5py.File(filename, 'r') as f:
-    imgs = f[KEY_FL][grna_file_trench_index]
-    print(imgs.shape)
-
-#%%
-metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
-metadata

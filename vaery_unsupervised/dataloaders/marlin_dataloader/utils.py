@@ -9,6 +9,9 @@ def expand_metadata_on_time(
     cols_to_keep: list[str] = ['Multi-Experiment Phenotype Trenchid', 'oDEPool7_id', 
                 'Gene', 'gene_id', 'Experiment #', 'grna_file_trench_index']
 ) -> pd.DataFrame:
+    """
+    Expand the metadata DataFrame to include all timepoints for each sample.
+    """
     metadata_expanded = (metadata
         .loc[:, cols_to_keep]
         .reset_index()
@@ -30,6 +33,9 @@ def compute_mean_and_std_over_sample(
     data_path:str,
     metadata:pd.DataFrame,
 ):
+    '''
+    Compute the mean and standard deviation of the fluorescence images over a sample of genes and gRNAs.
+    '''
     COLS_TO_KEEP = ['gene_grna_trench_index', 'gene_id', 'oDEPool7_id', 'grna_file_trench_index']
     
     metadata_only_gene_grnas = (metadata
@@ -65,24 +71,24 @@ def compute_mean_and_std_over_sample(
     return n_images, mean_sample, std_sample
 
 #%%
-from pathlib import Path
-HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
-KEY_FL = 'fluorescence'
-KEY_SEG = 'segmentation' 
-metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
+# from pathlib import Path
+# HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
+# KEY_FL = 'fluorescence'
+# KEY_SEG = 'segmentation' 
+# metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
 
-#%%
-n_images, mean_sample, std_sample = compute_mean_and_std_over_sample(
-    data_path=HEADPATH / 'Ecoli_lDE20_Exps-0-1/',
-    metadata=metadata
-)
-print(n_images, mean_sample, std_sample)
-# %%
-N_IMAGES = 15290
-WEIGHTED_MEAN = 200183.2210227729
-WEIGHTED_STD = 175738.43323474968
+# #%%
+# n_images, mean_sample, std_sample = compute_mean_and_std_over_sample(
+#     data_path=HEADPATH / 'Ecoli_lDE20_Exps-0-1/',
+#     metadata=metadata
+# )
+# print(n_images, mean_sample, std_sample)
+# # %%
+# N_IMAGES = 15290
+# WEIGHTED_MEAN = 200183.2210227729
+# WEIGHTED_STD = 175738.43323474968
 
-SAMPLED_MEAN = WEIGHTED_MEAN/N_IMAGES
-SAMPLED_STD = WEIGHTED_STD/N_IMAGES
+# SAMPLED_MEAN = WEIGHTED_MEAN/N_IMAGES
+# SAMPLED_STD = WEIGHTED_STD/N_IMAGES
 
-print(SAMPLED_MEAN, SAMPLED_STD)
+# print(SAMPLED_MEAN, SAMPLED_STD)

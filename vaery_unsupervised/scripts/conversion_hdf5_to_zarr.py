@@ -1,11 +1,11 @@
 #%%
 from pathlib import Path
 from iohub.ngff import open_ome_zarr
-from iohub.ngff.utils import create_empty_plate
+# from iohub.ngff.utils import create_empty_plate
 import h5py
 import pandas as pd
 import numpy as np
-
+# TODO: It is very slow. Parallelize or find a better strategy
 # HEADPATH = Path('/home/lag36/scratch/lag36/Ecoli/2023-01-18_lDE20_Merged_Analysis/') # HMS Cluster
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/') # AI-MBL Cluster
 metadata_path = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering.pkl'
