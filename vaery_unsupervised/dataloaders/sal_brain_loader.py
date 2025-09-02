@@ -11,6 +11,7 @@ import numpy as np
 from typing import Tuple, Union, List
 
 _logger = logging.getLogger("lightning.pytorch")
+_logger.setLevel(logging.DEBUG)
 
 class SalBrainDataModule(L.LightningDataModule):
     """
@@ -49,7 +50,7 @@ class SalBrainDataModule(L.LightningDataModule):
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
         #self.dataset = SalBrainDataset(self.data_path, self.patch_size)
-
+        _logger.debug('Pritining debug')
 
     def setup(self, stage: str):
         """
