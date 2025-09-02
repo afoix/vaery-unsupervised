@@ -3,12 +3,12 @@ import torch.nn.functional as F
 from torch import nn, optim
 
 
-class ResizeConv2d(nn.Module):
+class ResizeConv3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, scale_factor, mode='nearest'):
         super().__init__()
         self.scale_factor = scale_factor
         self.mode = mode
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=kernel_size//2)
+        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size, stride=1, padding=kernel_size//2)
     
     def forward(self, x):
         x = F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
@@ -17,22 +17,22 @@ class ResizeConv2d(nn.Module):
 
 class BasicBlockEnc(nn.Module):
 
-    def __init__(self, in_planes, stride=1):
+    def __init__(self, in_features, stride=1):
         super().__init__()
 
-        planes = in_planes*stride
+        features = in_features*stride
 
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv1 = nn.Conv3d(in_features, features, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm3d(features)
+        self.conv2 = nn.Conv3d(features, features, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(features)
 
         if stride == 1:
             self.shortcut = nn.Identity()
         else:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes)
+                nn.Conv3d(in_features, features, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(features)
             )
 
     def forward(self, x):
@@ -82,11 +82,11 @@ class ResNet18Enc(nn.Module):
     layer2 128 -> 256
     layer3 256 -> 
     """
-    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, n_chan=3):
+    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3):
         super().__init__()
         self.in_features = 64
         self.z_dim = z_dim
-        self.conv1 = nn.Conv3d(in_channels=self.in_features, 
+        self.conv1 = nn.Conv3d(in_channels=64, 
                                out_channels=64, 
                                kernel_size=3, 
                                stride=2, 
@@ -99,12 +99,12 @@ class ResNet18Enc(nn.Module):
         self.layer4 = self._make_layer(BasicBlockEnc, 512, num_Blocks[3], stride=2)
         self.linear = nn.Conv3d(512, 2 * z_dim, kernel_size=1)
 
-    def _make_layer(self, BasicBlockEnc, planes, num_Blocks, stride):
+    def _make_layer(self, BasicBlockEnc, features, num_Blocks, stride):
         strides = [stride] + [1]*(num_Blocks-1)
         layers = []
         for stride in strides:
-            layers += [BasicBlockEnc(self.in_planes, stride)]
-            self.in_planes = planes
+            layers += [BasicBlockEnc(self.in_features, stride)]
+            self.in_features = features
         return nn.Sequential(*layers)
 
     def forward(self, x):
@@ -121,25 +121,28 @@ class ResNet18Dec(nn.Module):
 
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=28):
         super().__init__()
-        self.in_planes = 512
+        self.in_features = 512
         self.nc = nc
         self.out_features = out_features
 
-        self.linear = nn.Conv2d(z_dim, 512, kernel_size=1)
+        self.linear = nn.Conv3d(in_channels=z_dim, 
+                                out_channels=512, 
+                                kernel_size=1)
 
         self.layer4 = self._make_layer(BasicBlockDec, 256, num_Blocks[3], stride=2)
         self.layer3 = self._make_layer(BasicBlockDec, 128, num_Blocks[2], stride=2)
         self.layer2 = self._make_layer(BasicBlockDec, 64, num_Blocks[1], stride=2)
         self.layer1 = self._make_layer(BasicBlockDec, 64, num_Blocks[0], stride=1)
-        self.conv1 = ResizeConv2d(64, nc, kernel_size=3, scale_factor=2)
-        self.final_linear = torch.nn.Linear(32**2, self.out_features**2)
 
-    def _make_layer(self, BasicBlockDec, planes, num_Blocks, stride):
+        self.conv1 = ResizeConv3d(64, nc, kernel_size=3, scale_factor=2)
+        self.final_linear = torch.nn.Linear(32**3, self.out_features**3)
+
+    def _make_layer(self, BasicBlockDec, features, num_Blocks, stride):
         strides = [stride] + [1]*(num_Blocks-1)
         layers = []
         for stride in reversed(strides):
             layers += [BasicBlockDec(self.in_planes, stride)]
-        self.in_planes = planes
+        self.in_features = features
         return nn.Sequential(*layers)
 
     def forward(self, z):
@@ -149,8 +152,8 @@ class ResNet18Dec(nn.Module):
         x = self.layer2(x)
         x = self.layer1(x)
         x = torch.sigmoid(self.conv1(x))
-        b,c,w,h = x.shape
-        x = self.final_linear(x.view(b,c,w*h))
+        b,c,w,h,d = x.shape
+        x = self.final_linear(x.view(b,c,w*h*d))
         return x.view(b,c,self.out_features, self.out_features)
     
     
