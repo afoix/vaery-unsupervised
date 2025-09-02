@@ -17,13 +17,14 @@ def reparameterize(mean, log_var):
 class SpatialVAE(LightningModule):
 
   def __init__(self, channels_selection = [1,2,3],
-               beta = 1e-3, matrix_size = 32, latent_size = 128, 
-               n_chan = 1, lr = 0.001):
+               beta = 1e-3, latent_size = 128, 
+               n_chan = 1, lr = 0.001, out_features = 128):
 
     super().__init__()
+    self.out_features = out_features
 
     self.encode = ResNet18Enc(nc = n_chan, z_dim = latent_size)
-    self.decode = ResNet18Dec(nc = n_chan, z_dim = latent_size)
+    self.decode = ResNet18Dec(nc = n_chan, z_dim = latent_size, out_features=self.out_features)
 
     # specify desired loss
     self.beta = beta
@@ -43,15 +44,16 @@ class SpatialVAE(LightningModule):
     x_hat, z_mean, z_log_var = self(input)
     target = batch["target"][:,self.channels_selection,:,:]
     loss, recon, kld = self.loss(target, x_hat, z_mean, z_log_var)
+
     self.log("train/loss", loss.item())
     self.log("train/loss/recon", recon.item())
     self.log("train/loss/kld", kld.item())
 
     if batch_idx == 0:
-        self.log("train/target", target[0])
-        self.log("train/reconstruction", x_hat[0])
-    
-    return loss
+        tensorboard = self.logger.experiment
+        tensorboard.add_image("train/target", target[0])
+        tensorboard.add_image("train/reconstruction", x_hat[0])
+    return loss 
 
   def validation_step(self, batch, batch_idx):
     input = batch["input"][:,self.channels_selection,:,:]
@@ -63,8 +65,15 @@ class SpatialVAE(LightningModule):
     self.log("val/loss/kld", kld.item())
 
     if batch_idx == 0:
-        self.log("val/target", target[0])
-        self.log("val/reconstruction", x_hat[0])
+    #     self.log("val/target", target[0])
+    #     self.log("val/reconstruction", x_hat[0])
+        tensorboard = self.logger.experiment
+        tensorboard.add_image("val/target", target[0])
+        tensorboard.add_image("val/reconstruction", x_hat[0])
+
+    tensorboard.
+    
+    #return z_mean, z_log_var
 
   def configure_optimizers(self):
     return torch.optim.Adam(self.parameters(), self.lr)
