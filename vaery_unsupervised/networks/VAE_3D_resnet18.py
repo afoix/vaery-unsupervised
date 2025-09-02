@@ -43,25 +43,25 @@ class BasicBlockEnc(nn.Module):
         return out
 
 class BasicBlockDec(nn.Module):
-    def __init__(self, in_planes, stride=1):
+    def __init__(self, in_features, stride=1):
         super().__init__()
-        planes = int(in_planes/stride)
+        features = int(in_features/stride)
 
-        self.conv2 = nn.Conv2d(in_planes, in_planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(in_planes)
+        self.conv2 = nn.Conv3d(in_features, in_features, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm3d(in_features)
         # self.bn1 could have been placed here, 
         # but that messes up the order of the layers when printing the class
 
         if stride == 1:
-            self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-            self.bn1 = nn.BatchNorm2d(planes)
+            self.conv1 = nn.Conv3d(in_features, features, kernel_size=3, stride=1, padding=1, bias=False)
+            self.bn1 = nn.BatchNorm3d(features)
             self.shortcut = nn.Sequential()
         else:
-            self.conv1 = ResizeConv2d(in_planes, planes, kernel_size=3, scale_factor=stride)
-            self.bn1 = nn.BatchNorm2d(planes)
+            self.conv1 = ResizeConv3d(in_features, features, kernel_size=3, scale_factor=stride)
+            self.bn1 = nn.BatchNorm3d(features)
             self.shortcut = nn.Sequential(
-                ResizeConv2d(in_planes, planes, kernel_size=3, scale_factor=stride),
-                nn.BatchNorm2d(planes)
+                ResizeConv3d(in_features, features, kernel_size=3, scale_factor=stride),
+                nn.BatchNorm3d(features)
             )
     
     def forward(self, x):
