@@ -1,29 +1,19 @@
 #%%
 import logging
+import zarr
 import spatialdata as sd
 import numpy as np
 import torch
+import json
 from lightning.pytorch import LightningDataModule
-from monai.data import set_track_meta
-from monai.data.utils import collate_meta_tensor
-from monai.transforms import (
-    CenterSpatialCropd,
-    Compose,
-#    DictTransform, -> doesn't work
-    MapTransform,
-    MultiSampleTrait,
-    RandAffined,
-)
+from monai.transforms import Compose
 import rasterio.features
 import time
 from spatialdata.dataloader import ImageTilesDataset
-from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from shapely.geometry import Polygon, MultiPolygon, box
+from shapely.geometry import Polygon
 from shapely.affinity import translate
-from shapely.ops import unary_union
-from skimage.draw import polygon as draw_polygon
 
 DATASET_NORM_DICT = {
     '450': (
@@ -398,3 +388,221 @@ class SpatProteomicDataModule(LightningDataModule):
             # prefetch_factor=self.prefetch_factor
         )
     
+class SpatProteoDatasetZarr(Dataset):
+    def __init__(
+            self, 
+            zarr_path,
+            metadata_path_name = "metadata_crop_128_px.json", # what your metada wityhin the zarr folder is called
+            dataset_name = "crop_128_px", # what your dataset in the zarr file is called
+            masking_function = None, # calling it with no masking function will return the basic mask (direct cutout of polygon)
+            dataset_normalisation_dict = None,
+            transform_input: list|None=None, 
+            transform_both: list|None=None,
+            train_val_split =0.8,
+            crop_size = 128,
+            seed=42,
+            train:bool=True,
+    ):
+        super().__init__()
+
+        # getting datasets and mapping
+        self.zarr_path = zarr_path
+        self.zarr_array = zarr.open_group(zarr_path)[dataset_name]
+        with open(zarr_path/metadata_path_name,'r') as f:
+            self.info_dict = json.load(f)
+        self.total_length = len(self.zarr_array)
+        # defining functions for masking and normalisation
+        # normalisation function expects (image, patient_id)
+        self.crop_size = crop_size
+        self.masking_function = masking_function
+        self.dataset_normalisation_dict = dataset_normalisation_dict
+        # setting transform and train/val split
+        self.transform_both = transform_both
+        self.transform_input = transform_input
+        self.train = train
+
+        # get random seed to ensure same train / val split
+        np.random.seed(seed)
+        indices = np.random.permutation(self.total_length)
+        split = int(train_val_split * self.total_length)
+        self.train_indices = indices[:split]
+        self.val_indices = indices[split:]
+
+    def __len__(self):
+        if self.train:
+            return len(self.train_indices)
+        else:
+            return len(self.val_indices)
+
+    def __getitem__(self, index):
+        # Logic to get a sample from the dataset
+        if self.train:
+            index = self.train_indices[index]
+        else:
+            index = self.val_indices[index]
+
+        start = time.process_time()
+        image = self.zarr_array[index,0:4,:,:]
+        mask = self.zarr_array[index,4,:,:]
+        poly_xy = self.info_dict["polys_crop_image_space_(x,y)"][index]
+
+        time_get_data = time.process_time() - start
+
+        metadata = {
+            "dataset":self.info_dict['dataset'][index], 
+            "dataset_file":self.info_dict['dataset_file'][index],
+            "row_idx":self.info_dict['row_idx'][index],
+            "well_id":self.info_dict['well_id'][index],
+            #"poly":poly_xy
+        }
+        
+        start = time.process_time()
+        if self.dataset_normalisation_dict:
+            mean, stddev = self.dataset_normalisation_dict[metadata['dataset']]
+            image = (
+                image - np.array(mean)[:,np.newaxis,np.newaxis]
+            ) / np.array(stddev)[:,np.newaxis,np.newaxis]
+        time_norm = time.process_time() - start
+        start = time.process_time()
+        input = self.masking_function(image, mask)
+        input = torch.Tensor(input)
+        raw = input.clone()
+        if self.transform_both:
+            
+            composed_transform = Compose(transforms=self.transform_both)
+            input = composed_transform(input)
+        
+        target = input.clone()
+
+        if self.transform_input:
+            composed_transform_input = Compose(transforms=self.transform_input)
+            input = composed_transform_input(input)
+        time_mask_aug = time.process_time() - start 
+
+
+        return {
+            "raw": raw, 
+            "input":input, 
+            "target":target, 
+            "metadata":metadata, 
+            "timing":{
+                "time_loading":time_get_data,
+                "time_nomr":time_norm,
+                "time_mask_n_aug":time_mask_aug
+            }
+        }
+
+
+class SpatProtoZarrDataModule(LightningDataModule):
+    def __init__(
+            self, 
+            zarr_path:str,
+            masking_function,
+            batch_size:int, 
+            num_workers:int,
+            crop_size = 128,
+            dataset_normalisation_dict = None,
+            transform_both: list|None=None,
+            transform_input: list|None=None,
+            prefetch_factor:int=2,
+            pin_memory:bool=True,
+            persistent_workers:bool=False,
+            seed=42,
+            train_val_split = 0.9
+        ):
+        super().__init__()
+        self.zarr_path = zarr_path
+        # setting masking function and transform
+        self.crop_size = crop_size
+        self.dataset_normalisation_dict = dataset_normalisation_dict
+        self.masking_function = masking_function
+        self.transform_input = transform_input
+        self.transform_both = transform_both
+        self.train_val_split = train_val_split
+
+        # setup lightning datamodule parameters
+        self.dataset = None
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.seed = seed
+
+        # NOTE: These parameters are for performance
+        self.prefetch_factor = prefetch_factor
+        self.pin_memory = pin_memory
+        self.persistent_workers = persistent_workers
+    
+    def prepare_data(self):
+        # we don't need this
+        pass
+
+    def setup(self, stage: str):
+        if stage == "fit" or stage == "train":
+            self.dataset = SpatProteoDatasetZarr(
+                zarr_path=self.zarr_path,
+                masking_function=self.masking_function,
+                dataset_normalisation_dict=self.dataset_normalisation_dict,
+                crop_size=self.crop_size,
+                transform_input=self.transform_input,
+                transform_both = self.transform_both,
+                seed=self.seed,
+                train=True,
+                train_val_split = self.train_val_split
+            )
+
+        elif stage == "val" or stage == "validate":
+            self.dataset = SpatProteoDatasetZarr(
+                zarr_path=self.zarr_path,
+                masking_function=self.masking_function,
+                dataset_normalisation_dict=self.dataset_normalisation_dict,
+                crop_size=self.crop_size,
+                transform_input=None,
+                transform_both = None,
+                seed=self.seed,
+                train=False,
+                train_val_split = self.train_val_split
+
+            )
+
+        elif stage == "predict":
+
+            self.dataset = SpatProteoDatasetZarr(
+                zarr_path=self.zarr_path,
+                masking_function=self.masking_function,
+                dataset_normalisation_dict=self.dataset_normalisation_dict,
+                crop_size=self.crop_size,
+                transform_input=None,
+                transform_both = None,
+                seed=self.seed,
+                train=True,
+                train_val_split=1
+                )
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset,
+            shuffle=True,
+            batch_size=self.batch_size, 
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset,
+            shuffle=False, 
+            batch_size=self.batch_size, 
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            self.dataset, 
+            shuffle=False,
+            batch_size=self.batch_size, 
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor
+        )
