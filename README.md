@@ -4,6 +4,7 @@ Representation learning for bioimaging using Variational Autoencoders (VAE) and 
 
 ## Installation
 
+<img src="vaery_unsupervised/docs/figures/steve.png" alt="VAEry Unsupervised Overview" width="300"/>
 
 ### Clone and Install
 
