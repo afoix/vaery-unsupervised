@@ -12,6 +12,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
+from vaery_unsupervised.
+
 from dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule, MarlinDataset
 from networks.marlin_contrastive import ResNetEncoder, ContrastiveModule
 from networks.marlin_contrastive import projection_mlp
@@ -110,7 +112,7 @@ trainer = L.Trainer(
     devices="auto",
     accelerator="gpu",
     strategy="auto",
-    precision="32-true",
+    precision="16-mixed",
     max_epochs=1,
 )
 
