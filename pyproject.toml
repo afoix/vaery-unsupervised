@@ -17,6 +17,8 @@ classifiers = [
 ]
 dependencies = [
     "iohub>=0.2.2",
+    "zarr<=3",
+    "ome-zarr<=12",
     "torch>=2.4.1",
     "timm>=0.9.5",
     "tensorboard>=2.13.0",
@@ -33,6 +35,7 @@ dynamic = ["version"]
 [project.optional-dependencies]
 visual = ["napari", "jupyter", "jupytext", "transformers>=4.51.3", "torchview-0.2.7]
 marlin = ["vaery-unsupervised[visual]", "h5py", "pyarrow", "torchview"]
+kati = ["spatialdata","rasterio",]
 dev = [
 "vaery-unsupervised[visual]",
 ]
