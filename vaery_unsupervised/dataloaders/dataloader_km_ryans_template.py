@@ -14,6 +14,8 @@ from monai.transforms import (
     MultiSampleTrait,
     RandAffined,
 )
+import rasterio.features
+import time
 from spatialdata.dataloader import ImageTilesDataset
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
@@ -44,77 +46,19 @@ DATASET_NORM_DICT = {
         np.array([891.61264098, 544.82783817, 184.27180556,  94.89693314]))
 }
 
-def polygon_to_centered_mask(geom, size=64): #This will be applied to the image coords to get an image around the bounding box of the object
-    
+def polygon_to_centered_mask(poly: Polygon, size: int = 64):
     """
-    Convert a Shapely (Multi)Polygon in image coordinates (x=cols, y=rows)
-    into a boolean mask of shape (size, size) centered at the polygon centroid. #This will be applied to the image coords to get an image around the bounding box of the object
-    
-    Parameters
-    ----------
-    geom : shapely.geometry.Polygon or MultiPolygon
-        Geometry in the same coordinate system as the image (x right, y down).
-    size : int
-        Output mask width and height.
-    
-    Returns
-    -------
-    mask : np.ndarray (bool) of shape (size, size)
-    offset_xy : tuple (float, float)
-        (x_min, y_min) of the crop window in the original coordinate system.
-        Useful if you want to crop the image: img[y_min:y_min+size, x_min:x_min+size]
-        (after rounding/clipping to valid indices).
+    Rasterize a single Shapely Polygon (with possible holes) into a boolean mask
+    of shape (size, size), centered at the polygon's centroid.
+
+    Returns (mask, (x_min, y_min)), where (x_min, y_min) is the crop's upper-left
+    corner in the original coordinate system.
     """
-    if geom.is_empty:
-        return np.zeros((size, size), dtype=bool), (np.nan, np.nan)
+    # print(poly.is_valid)
+    tp = transpose_polygon_to_image(poly,size=size)
 
-    # centroid (x, y). Note: x ~ columns, y ~ rows
-    cx, cy = geom.centroid.x, geom.centroid.y
-    half = size / 2.0
+    return rasterio.features.rasterize([tp], out_shape=(size, size))
 
-    # crop window bounds in original coords (float)
-    x_min = cx - half
-    y_min = cy - half
-
-    # translate geometry so that (x_min, y_min) maps to (0, 0) in the mask frame
-    #This defines the coordinates of the bounding box to 0,0 for the mask
-    g = translate(geom, xoff=-x_min, yoff=-y_min)
-
-    # clip to the mask frame to avoid degenerate or out-of-bounds coords
-    frame = box(0.0, 0.0, float(size), float(size)) #box(minx, miny, maxx, maxy, ccw=True)
-    g_clipped = g.intersection(frame) #This crops the mask frame of the cell to force it to have the size of the frame
-    #Cells that are larger than the bounding box will be cropped if they weren't already
-
-    mask = np.zeros((size, size), dtype=bool)
-    if g_clipped.is_empty:
-        return mask, (x_min, y_min)
-
-    # normalize to iterable of Polygons
-    polys = []
-    if isinstance(g_clipped, Polygon):
-        polys = [g_clipped]
-    elif isinstance(g_clipped, MultiPolygon):
-        polys = list(g_clipped.geoms)
-    else:
-        # If intersection yielded a collection, attempt to union polygons
-        polys = [p for p in unary_union(g_clipped).geoms] if hasattr(unary_union(g_clipped), "geoms") else []
-
-    for poly in polys:
-        if poly.is_empty:
-            continue
-
-        # exterior
-        ex = np.asarray(poly.exterior.coords)
-        rr, cc = draw_polygon(ex[:,1], ex[:,0], shape=mask.shape)  # rows=y, cols=x, the : keeps all channels
-        mask[rr, cc] = True #Making them true means that you can map the values of the pixels later when you apply it to the image
-
-        # holes (interiors): subtract them
-        for interior in poly.interiors: #poly.interiors returns all dataframes that are within that shape
-            ih = np.asarray(interior.coords)
-            rr_h, cc_h = draw_polygon(ih[:,1], ih[:,0], shape=mask.shape)
-            mask[rr_h, cc_h] = False #Within the interiors (which you draw above) make them false
-
-    return mask, (x_min, y_min) #This will probably be applied within a loop later to apply to each image
 
 def extract_image_mask_poly_well(
         sdata,idx,
@@ -135,7 +79,7 @@ def extract_image_mask_poly_well(
         target_coordinate_system=name_coordinates
     )
 
-    mask, _ = polygon_to_centered_mask(poly,size)
+    mask = polygon_to_centered_mask(poly,size)
 
     return cropped[name_image].values, mask, poly, well
 
@@ -266,7 +210,7 @@ class SpatProteomicsDataset(Dataset):
             index = self.val_indices[index]
 
         dataset_idx, row_idx = self.mapping[index]
-
+        start = time.process_time()
         image, mask, poly, well = extract_image_mask_poly_well(
             self.datasets[dataset_idx], 
             row_idx,
@@ -275,6 +219,7 @@ class SpatProteomicsDataset(Dataset):
             name_coordinates=self.coordinate_name_list[dataset_idx],
             size = self.crop_size
         )
+        time_get_data = time.process_time() - start
         #print(f"image_shape: {image.shape}")
         #print(f"mask_shape: {mask.shape}")
         patient_id_sample = self.patient_id_list[dataset_idx]
@@ -283,14 +228,18 @@ class SpatProteomicsDataset(Dataset):
             "dataset_file":self.file_list[dataset_idx],
             "row_idx":row_idx,
             "well_id":well,
+            
             # "poly":[poly] #TODO deal with this later
         }
         
+        start = time.process_time()
         if self.dataset_normalisation_dict:
             mean, stddev = self.dataset_normalisation_dict[patient_id_sample]
             image = (
                 image - np.array(mean)[:,np.newaxis,np.newaxis]
             ) / np.array(stddev)[:,np.newaxis,np.newaxis]
+        time_norm = time.process_time() - start
+        start = time.process_time()
         input = self.masking_function(image, mask)
         input = torch.Tensor(input)
         raw = input.clone()
@@ -307,10 +256,20 @@ class SpatProteomicsDataset(Dataset):
             composed_transform_input = Compose(transforms=self.transform_input)
 
             input = composed_transform_input(input)
-            
+        time_mask_aug = time.process_time() - start 
 
 
-        return {"raw": raw, "input":input, "target":target, "metadata":metadata}
+        return {
+            "raw": raw, 
+            "input":input, 
+            "target":target, 
+            "metadata":metadata, 
+            "timing":{
+                "time_loading":time_get_data,
+                "time_nomr":time_norm,
+                "time_mask_n_aug":time_mask_aug
+            }
+        }
 
 
 class SpatProteomicDataModule(LightningDataModule):
