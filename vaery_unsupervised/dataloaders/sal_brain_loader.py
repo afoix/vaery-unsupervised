@@ -12,8 +12,6 @@ from typing import Tuple, Union, List
 
 _logger = logging.getLogger("lightning.pytorch")
 
-_db_log = logging.getLogger("func_logger")
-
 class SalBrainDataModule(L.LightningDataModule):
     """
     Notes:
@@ -133,9 +131,6 @@ class SalBrainDataset(Dataset):
         self.bounding_box = get_bounding_box(self.mask)
         self.volume_shape = self.volume.shape
 
-        print(self.n_channels)
-        print(len([0.0 for i in range(self.n_channels)]))
-
         self.transformations = v2.Compose([v2.Normalize(mean=[0.0 for i in range(self.n_channels)], 
                                                   std=[1.0 for i in range(self.n_channels)])])
         self.indices = random_patch_sampler(self.bounding_box, 
@@ -143,7 +138,6 @@ class SalBrainDataset(Dataset):
                                             num_samples=batch_size,  # *100??
                                             binary_mask=self.mask)
 
-        self.logger = _db_log
 
     def __len__(self):
         return len(self.indices)
@@ -156,8 +150,7 @@ class SalBrainDataset(Dataset):
                            self.indices[index][0]:self.indices[index][1], 
                            self.indices[index][2]:self.indices[index][3], 
                            self.indices[index][4]:self.indices[index][5]]
-        
-        print("from get_item:", vol.shape)
+
 
         mean = np.mean(vol, axis=(1, 2, 3), keepdims=True)
         std = np.std(vol, axis=(1, 2, 3), keepdims=True)
@@ -226,9 +219,9 @@ def random_patch_sampler(bbox: Tuple,
 
         if binary_mask is not None:
             coverage = np.sum(binary_mask[z_start:z_end, y_start:y_end, x_start:x_end])/(patch_size[0] * patch_size[1] * patch_size[2])
-            _db_log.debug(f"Patch {i}: coverage {coverage:.2f}")
+            #_db_log.debug(f"Patch {i}: coverage {coverage:.2f}")
             if coverage < min_coverage:
-                _db_log.debug("Skipping patch due to insufficient coverage")
+                #_db_log.debug("Skipping patch due to insufficient coverage")
                 continue
             else:
                 patches.append((z_start, z_end,
