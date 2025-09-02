@@ -387,7 +387,7 @@ class SpatProteomicDataModule(LightningDataModule):
             # pin_memory=self.pin_memory,
             # prefetch_factor=self.prefetch_factor
         )
-    
+# ------------------------ FASTER LOADING FROM ZARR ------------------------------------------
 class SpatProteoDatasetZarr(Dataset):
     def __init__(
             self, 
