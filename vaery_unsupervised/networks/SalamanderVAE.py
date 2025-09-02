@@ -1,7 +1,7 @@
 import torch
 from lightning import LightningModule
 
-from .model_VAE_resnet18 import ResNet18Enc, ResNet18Dec
+from .VAE_3D_resnet18 import ResNet18Enc, ResNet18Dec
 
 def model_loss(x, recon_x, z_mean, z_log_var, beta = 1e-3):
   mse = torch.nn.functional.mse_loss(x, recon_x)
@@ -14,9 +14,12 @@ def reparameterize(mean, log_var):
   epsilon = torch.randn_like(std)
   return mean + epsilon * std
 
-class LitVAE(LightningModule):
+class SalamanderVAE(LightningModule):
 
-  def __init__(self, beta = 1e-3, matrix_size = 32, latent_size = 128, n_chan = 1):
+  def __init__(self, beta = 1e-3, 
+               matrix_size = 32, 
+               latent_size = 128, 
+               n_chan = 1):
 
     super().__init__()
 

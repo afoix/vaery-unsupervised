@@ -75,18 +75,21 @@ class BasicBlockDec(nn.Module):
 class ResNet18Enc(nn.Module):
     """
     INITIAL LAYERS:
-    Conv0 to 64 features
+    Conv1 nc -> 64 features
     BatchNorm
     BASIC BLOCKS:
-    layer1 64 -> 128 x num_Blocks[0]
-    layer2 128 -> 256
-    layer3 256 -> 
+    layer1 64 -> 64 
+    layer2 64 -> 128
+    layer3 128 -> 256
+    layer4 256 -> 512
+    TO LATENT SPACE:
+    linear 512 -> z_dim
     """
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3):
         super().__init__()
         self.in_features = 64
         self.z_dim = z_dim
-        self.conv1 = nn.Conv3d(in_channels=64, 
+        self.conv1 = nn.Conv3d(in_channels=nc, 
                                out_channels=64, 
                                kernel_size=3, 
                                stride=2, 
@@ -118,6 +121,18 @@ class ResNet18Enc(nn.Module):
         return mu, logvar
 
 class ResNet18Dec(nn.Module):
+    """
+    INITIAL LAYERS:
+    Linear z_dim -> 512
+    BASIC BLOCKS:
+    layer4 512 -> 256 
+    layer3 256 -> 128
+    layer2 128 -> 64
+    layer1 64 -> 64
+    SIGMOID(Conv1 64 -> nc)
+    FINAL LINEAR:
+    linear 512 -> z_dim
+    """
 
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=28):
         super().__init__()
