@@ -29,7 +29,7 @@ if __name__ == "__main__":
         ome_zarr_path=ome_zarr_path,
         source_channel_names=['mito','er','nuclei'],
         weight_channel_name='nuclei',
-        crop_size=(256, 256),
+        crop_size=(128, 128),
         crops_per_position=4,
         batch_size=1,
         num_workers=10,
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     dm.setup("fit")
     train_loader = dm.train_dataloader()
     # val_loader = dm.val_dataloader()
-    #%%
+
 
     for i,batch in enumerate(train_loader):
         print(batch['anchor'][0].shape)

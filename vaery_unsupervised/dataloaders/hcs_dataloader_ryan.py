@@ -9,9 +9,8 @@ from monai.data import set_track_meta
 from monai.transforms import Compose, ToTensord
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
-from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop
+from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop
 
-#%%
 
 class ContrastiveHCSDataset(Dataset):
     def __init__(self, positions: list[Position], source_channel_names: list[str],weight_channel_name: str = 'nuclei', crop_size: tuple[int, int]=(256, 256), 
@@ -59,7 +58,7 @@ class ContrastiveHCSDataset(Dataset):
         weight_img = img_cyx[weight_channel_index:weight_channel_index+1]  # Shape: (1, Y, X)
         
         random_weighted_crop = RandWeightedCrop(
-            spatial_size=self.crop_size,  # (H, W) for 2D spatial crop
+            spatial_size=(self.crop_size[0]*1.41, self.crop_size[1]*1.41),  # (H, W) for 2D spatial crop
             weight_map=weight_img,  # Remove channel dim, now (Y, X)
             num_samples=1
         )
@@ -83,7 +82,7 @@ class ContrastiveHCSDataset(Dataset):
     def __len__(self):
         return len(self.all_positions)
 
-#%%
+
 class HCSDataModule(pl.LightningDataModule):
     def __init__(self, ome_zarr_path, source_channel_names, weight_channel_name, crop_size=(256, 256),
                  crops_per_position=4, batch_size=32, num_workers=4, 
@@ -132,9 +131,8 @@ class HCSDataModule(pl.LightningDataModule):
             # positive_augmentations= [],
             weight_channel_name= self.weight_channel_name,
             positive_augmentations= Compose([
-                RandSpatialCrop(roi_size=(self.crop_size[0]*1.41, self.crop_size[1]*1.41), random_center=True, random_size=False),
-                RandRotate(range_x=30, prob=0.5, keep_size=True, mode="bilinear"),
-                RandSpatialCrop(roi_size=self.crop_size, random_center=True, random_size=False),
+                RandRotate(range_x=30, prob=1.0, keep_size=True, mode="bilinear", padding_mode="zeros"),
+                CenterSpatialCrop(roi_size=self.crop_size),
             ]),
         )
         self.val_dataset = ContrastiveHCSDataset(
