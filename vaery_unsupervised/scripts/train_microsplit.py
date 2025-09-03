@@ -20,18 +20,18 @@ from microsplit_reproducibility.configs.factory import (
     get_lr_scheduler_config,
 )
 from microsplit_reproducibility.configs.parameters._base import SplittingParameters
-# from microsplit_reproducibility.notebook_utils.custom_dataset_2D import (
-#     get_unnormalized_predictions,
-#     get_target,
-#     get_input,
-#     show_sampling,
-#     pick_random_patches_with_content,
-# )
-# from utils import (
-#     compute_metrics,
-#     show_metrics,
-#     full_frame_evaluation,
-# )
+from microsplit_reproducibility.notebook_utils.custom_dataset_2D import (
+    get_unnormalized_predictions,
+    get_target,
+    get_input,
+    show_sampling,
+    pick_random_patches_with_content,
+)
+from utils import (
+    compute_metrics,
+    show_metrics,
+    full_frame_evaluation,
+)
 
 from vaery_unsupervised.dataloaders.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
 
@@ -153,3 +153,50 @@ trainer.fit(
     train_dataloaders=data_module.train_dataloader(),
     val_dataloaders=data_module.val_dataloader()
 )
+
+#%%
+# Evaluate model on val dataset
+# %% tags=[]
+stitched_predictions, _, stitched_stds = (
+    get_unnormalized_predictions(
+        model,
+        data_module.val_dataset,
+        data_key=..., # FIXME
+        mmse_count=10,
+        grid_size=64,
+        num_workers=3,
+        batch_size=32,
+    )
+)
+
+
+#%%
+# Visualize predictions
+# get the target and input from the test dataset for visualization purposes
+tar = get_target(data_module.val_dataset)
+inp = get_input(data_module.val_dataset).sum(-1)
+
+#%%
+frame_idx = 0 # Change this index to visualize different frames
+assert frame_idx < len(stitched_predictions), f"Frame index {frame_idx} out of bounds. Max index is {len(stitched_predictions) - 1}."
+
+full_frame_evaluation(stitched_predictions[frame_idx], tar[frame_idx], inp[frame_idx], same_scale=False)
+
+#%%
+# Comment out the metrics you don't want to use
+METRICS = [
+    "PSNR",
+    "Pearson",
+    "SSIM",
+    "MS-SSIM",
+    "MicroSSIM",
+    "MicroMS3IM",
+    "LPIPS",
+]
+
+#%%
+# Extract gt dataset
+
+#%%
+metrics_dict = compute_metrics(gt_target, stitched_predictions, metrics=METRICS)
+show_metrics(metrics_dict)
