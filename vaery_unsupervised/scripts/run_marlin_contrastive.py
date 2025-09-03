@@ -21,25 +21,32 @@ from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
 from monai.transforms import (
     Compose,
     NormalizeIntensity,
+    RandFlipd,
 )
 
 # MEAN_OVER_DATASET = 13
 # STD_OVER_DATASET = 11
 
-# transforms = Compose([
-
-#     NormalizeIntensity(
-#         subtrahend=MEAN_OVER_DATASET,
-#         divisor=STD_OVER_DATASET,
-#         nonzero=False,
-#         channel_wise=False,
-#         dtype = np.float32,
-#     ),
-#     # Lambda(func=center_image,
-#     #        inv_func=None,
-#     #        track_meta=True)
-# ])
-transforms=None
+transforms = Compose([
+    # NormalizeIntensity(
+    #     subtrahend=MEAN_OVER_DATASET,
+    #     divisor=STD_OVER_DATASET,
+    #     nonzero=False,
+    #     channel_wise=False,
+    #     dtype = np.float32,
+    # ),
+    RandFlipd(
+        keys=["positive"],
+        spatial_axis=0,
+        prob=1,
+    )
+    RandFlipd(
+        keys=["positive"],
+        spatial_axis=1,
+        prob=1,
+    )
+])
+# transforms=None
 
 #%%
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
@@ -64,10 +71,13 @@ data_module = MarlinDataModule(
 )
 
 data_module._prepare_data()
-data_module.setup(stage='train')
+data_module.setup(stage='fit')
 #%%
-import matplotlib.pyplot as plt
-batch_sample['anchor'].shape
+data_module.metadata
+#%%
+data_module.train_dataset[0]
+# import matplotlib.pyplot as plt
+# batch_sample['anchor'].shape
 #%%
 plt.hist(batch_sample['anchor'].numpy().flatten(), bins=50)
 print(np.mean(batch_sample['anchor'].numpy()))
@@ -84,7 +94,7 @@ ax[1].imshow(batch_sample['positive'].numpy()[0, 0][:,65:85], cmap='gray')
 #%%
 plt.hist(batch_sample['positive'].numpy()[0, 0], bins=50)
 #%%
-dataloader = data_module.predict_dataloader()
+dataloader = data_module.train_dataloader()
 # batch_sample = next(iter(dataloader))
 # print(batch_sample['anchor'].shape)
 import time

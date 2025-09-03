@@ -79,15 +79,7 @@ class MarlinDataset(Dataset):
         img_fl_anchor = img_fl_anchor.astype(np.float32)
         img_fl_pos = img_fl_pos.astype(np.float32)
 
-        perc_2_anchor = np.percentile(img_fl_anchor, 2)
-        perc_98_anchor = np.percentile(img_fl_anchor, 98)
-        img_fl_anchor = (img_fl_anchor - perc_2_anchor) / (perc_98_anchor - perc_2_anchor)
-        img_fl_anchor = 2 * img_fl_anchor - 1
-
-        perc_2_pos = np.percentile(img_fl_pos, 2)
-        perc_98_pos = np.percentile(img_fl_pos, 98)
-        img_fl_pos = (img_fl_pos - perc_2_pos) / (perc_98_pos - perc_2_pos)
-        img_fl_pos = 2 * img_fl_pos - 1
+        
         # img_fl_anchor = (img_fl_anchor - np.mean(img_fl_anchor)) / np.std(img_fl_anchor)
         # img_fl_pos = (img_fl_pos - np.mean(img_fl_pos)) / np.std(img_fl_pos)
         # Set your desired output size
@@ -98,16 +90,29 @@ class MarlinDataset(Dataset):
         # img_seg_anchor = self.center_image(img_seg_anchor)
         # img_seg_pos = self.center_image(img_seg_pos)
 
+        perc_2_anchor = np.percentile(img_fl_anchor, 2)
+        perc_98_anchor = np.percentile(img_fl_anchor, 98)
+        img_fl_anchor = (img_fl_anchor - perc_2_anchor) / (perc_98_anchor - perc_2_anchor)
+        # img_fl_anchor = 2 * img_fl_anchor - 1
+
+        perc_2_pos = np.percentile(img_fl_pos, 2)
+        perc_98_pos = np.percentile(img_fl_pos, 98)
+        img_fl_pos = (img_fl_pos - perc_2_pos) / (perc_98_pos - perc_2_pos)
+        # img_fl_pos = 2 * img_fl_pos - 1
+
         img_fl_anchor = img_fl_anchor[None,...]
         img_fl_pos = img_fl_pos[None,...]
         
-        # if self.transform: # TODO ADD CENTERING HERE!
+        if self.transform: # TODO ADD CENTERING HERE!
         #     img_fl_anchor = self.transform(img_fl_anchor)
         #     img_fl_pos = self.transform(img_fl_pos)
 
         # TODO: CASE FOR TESTING/PREDICTING
         # if self.train_mode:
-        return {'anchor': img_fl_anchor, 'positive': img_fl_pos}
+            imgs = {'anchor': img_fl_anchor, 'positive':img_fl_pos}
+            imgs = self.transform(imgs)
+
+        return imgs
         # else:
             # return {'anchor': img_fl_anchor}
         

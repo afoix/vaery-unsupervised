@@ -19,6 +19,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from monai.transforms import (
     Compose,
     NormalizeIntensity,
+    RandFlipd,
 )
 
 MEAN_OVER_DATASET = 13
@@ -28,15 +29,27 @@ HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
 METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
 
-# transforms = Compose([
-#     NormalizeIntensity(
-#         subtrahend=MEAN_OVER_DATASET,
-#         divisor=STD_OVER_DATASET,
-#         nonzero=False,
-#         channel_wise=False,
-#         dtype = np.float32,
-#     )
-# ])
+
+transforms = Compose([
+    # NormalizeIntensity(
+    #     subtrahend=MEAN_OVER_DATASET,
+    #     divisor=STD_OVER_DATASET,
+    #     nonzero=False,
+    #     channel_wise=False,
+    #     dtype = np.float32,
+    # ),
+    RandFlipd(
+        keys=["positive"],
+        spatial_axis=0,
+        prob=1,
+    ),
+    RandFlipd(
+        keys=["positive"],
+        spatial_axis=1,
+        prob=1,
+    )
+])
+
 
 def main(*args, **kwargs):
 
@@ -46,7 +59,7 @@ def main(*args, **kwargs):
     "spatial_dims": 2,
     "embedding_dim": 512,
     "mlp_hidden_dims": 768,
-    "projection_dim": 128,
+    "projection_dim": 32,
     "pretrained": False,
     }
 
@@ -67,7 +80,7 @@ def main(*args, **kwargs):
         batch_size=256,
         num_workers=4,
         prefetch_factor=2,
-        transforms=None,#transforms
+        transforms=transforms,
     )
     data_module._prepare_data()
     data_module.setup(stage='fit')

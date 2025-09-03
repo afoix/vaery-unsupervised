@@ -40,7 +40,7 @@ class ResNetEncoder(nn.Module):
         spatial_dims: int = 2,#2,
         embedding_dim: int = 512,#768,
         mlp_hidden_dims: int = 768,
-        projection_dim: int = 128,
+        projection_dim: int = 32,
         pretrained: bool = False,
     ):
         """
@@ -180,7 +180,7 @@ class ContrastiveModule(LightningModule):
             #     loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        self._log_metrics(loss, anchor.detach(), positive.detach(), "train")
+        self._log_metrics(loss, anchor, positive, "train")
         return loss
 
     def configure_optimizers(self):
@@ -202,9 +202,16 @@ class ContrastiveModule(LightningModule):
         loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        self._log_metrics(loss = loss, anchor= anchor.detach(),  positive=positive.detach(), stage= "val")
+        self._log_metrics(loss = loss, anchor= anchor_proj,  positive=positive_proj, stage= "val")
         return loss
+    
+    def on_validation_epoch_end(self):
+        _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
+        super().on_validation_epoch_end()
 
+    def on_training_epoch_end(self):
+        _logger.debug(f"Training epoch ended with {self.encoder.backbone} backbone")
+        super().on_training_epoch_end()
 
     def _log_metrics(
         self, loss, anchor, positive, stage: Literal["train", "val"]
