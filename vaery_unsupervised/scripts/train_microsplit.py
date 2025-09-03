@@ -21,18 +21,14 @@ from microsplit_reproducibility.configs.factory import (
 )
 from microsplit_reproducibility.configs.parameters._base import SplittingParameters
 from microsplit_reproducibility.notebook_utils.custom_dataset_2D import (
-    get_unnormalized_predictions,
-    get_target,
-    get_input,
-    show_sampling,
-    pick_random_patches_with_content,
+    get_unnormalized_predictions, get_target, get_input,
 )
-from utils import (
+
+from vaery_unsupervised.dataloaders.microsplit.utils import (
     compute_metrics,
     show_metrics,
     full_frame_evaluation,
 )
-
 from vaery_unsupervised.dataloaders.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
 
 
@@ -156,7 +152,6 @@ trainer.fit(
 
 #%%
 # Evaluate model on val dataset
-# %% tags=[]
 stitched_predictions, _, stitched_stds = (
     get_unnormalized_predictions(
         model,
