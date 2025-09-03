@@ -407,7 +407,7 @@ class SpatProteoDatasetZarr(Dataset):
 
         # getting datasets and mapping
         self.zarr_path = zarr_path
-        self.zarr_array = zarr.open_group(zarr_path)[dataset_name]
+        self.zarr_array = np.array(zarr.open_group(zarr_path)[dataset_name])
         with open(zarr_path/metadata_path_name,'r') as f:
             self.info_dict = json.load(f)
         self.total_length = len(self.zarr_array)

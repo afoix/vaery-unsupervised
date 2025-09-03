@@ -1,7 +1,7 @@
 import torch
 from lightning import LightningModule
 import numpy as np
-from .model_VAE_resnet18_km import ResNet18Enc, ResNet18Dec
+from .km_ryan_linearresnet import ResNet18Enc, ResNet18Dec
 
 def model_loss(x, recon_x, z_mean, z_log_var, beta = 1e-3):
   mse = torch.nn.functional.mse_loss(x, recon_x)
@@ -14,7 +14,7 @@ def reparameterize(mean, log_var):
   epsilon = torch.randn_like(std)
   return mean + epsilon * std
 
-class SpatialVAE(LightningModule):
+class SpatialVAE_Linear(LightningModule):
   def __init__(self, channels_selection = [1,2,3],
                beta = 1e-3, latent_size = 128, 
                n_chan = 1, lr = 0.001, out_features = 128,
@@ -24,7 +24,7 @@ class SpatialVAE(LightningModule):
     self.save_hyperparameters()
     self.out_features = out_features
     self.latentspace_dir = latentspace_dir
-
+ 
     self.encode = ResNet18Enc(nc = n_chan, z_dim = latent_size)
     self.decode = ResNet18Dec(nc = n_chan, z_dim = latent_size, out_features=self.out_features)
 
@@ -69,7 +69,7 @@ class SpatialVAE(LightningModule):
         z = reparameterize(z_mean, z_log_var)
         epoch = self.current_epoch
         filename = f"{self.latentspace_dir}/z_val_epoch_{epoch}.npy"
-        np.save(filename, z.detach().cpu().numpy())
+        np.save(filename, z.clone().detach().cpu().numpy())
         print(f"Saved validation latent codes for epoch {epoch} from batch {batch_idx}")
 
         tensorboard = self.logger.experiment

@@ -9,7 +9,7 @@ from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
 )
 from vaery_unsupervised.km_utils import plot_batch_sample,plot_dataloader_output
 import monai.transforms as transforms
-from vaery_unsupervised.networks.LitVAE_km import SpatialVAE
+from vaery_unsupervised.networks.LightningVAE_linear_km import SpatialVAE_Linear
 import lightning
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import Callback
@@ -23,7 +23,7 @@ transform_both = [
         prob=0.5, 
         rotate_range=3.14, 
         shear_range=(0,0,0), 
-        translate_range=(0,20,20), 
+        translate_range=(0,50,50), 
         scale_range=None,   
         padding_mode="zeros",
         spatial_size=(128,128)),
@@ -67,11 +67,11 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "fastloadingVAE_beta1eneg10_lr0.0001_onlymems_latentsize2"
+model_name = "linear_VAE_beta1neg10lr0.0001_tmuxtraining"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
-spatialmodel = SpatialVAE(n_chan=2,latent_size=2, lr = 0.0001, beta = 1e-10, latentspace_dir = latentspace_path, channels_selection = [2,3])
+spatialmodel = SpatialVAE_Linear(n_chan=2,latent_size=128, lr = 0.0001, beta = 1e-10, latentspace_dir = latentspace_path, channels_selection = [2,3])
 
 
 #%%
@@ -84,7 +84,7 @@ logger = TensorBoardLogger(save_dir=logging_path, name = model_name)
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(
-        max_epochs = 60, 
+        max_epochs = 150, 
         accelerator = "gpu", 
        # precision = "16-mixed", 
         logger=logger,
