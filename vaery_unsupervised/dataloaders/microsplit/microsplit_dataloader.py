@@ -1,4 +1,6 @@
 from typing import Callable
+
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from iohub import open_ome_zarr
@@ -6,7 +8,7 @@ from iohub.ngff import Position
 from monai.data import set_track_meta
 from monai.transforms import Compose
 from torch.utils.data import DataLoader, Dataset
-from monai.transforms import Compose, RandRotate, RandSpatialCrop
+from monai.transforms import Compose, RandSpatialCrop
 
 
 class MicroSplitHCSDataset(Dataset):
@@ -44,13 +46,16 @@ class MicroSplitHCSDataset(Dataset):
         multi_ch_img = position[0].oindex[0, source_channel_indices, 0]
 
         # quantile normalization on the full image
-        max_per = torch.quantile(multi_ch_img, 0.99)
-        min_per = torch.quantile(multi_ch_img, 0.01)
+        max_per = np.quantile(multi_ch_img, 0.99)
+        min_per = np.quantile(multi_ch_img, 0.01)
         multi_ch_img = (multi_ch_img - min_per) / (max_per - min_per)
 
         # filter out empty patches setting them to zeros
-        if torch.isnan(multi_ch_img).any():
-            multi_ch_img = torch.nan_to_num(multi_ch_img, nan=0.0, posinf=1.0, neginf=0.0)
+        if np.isnan(multi_ch_img).any():
+            multi_ch_img = np.nan_to_num(multi_ch_img, nan=0.0, posinf=1.0, neginf=0.0)
+
+        # convert to tensor
+        multi_ch_img = torch.from_numpy(multi_ch_img).float()
 
         # crop image
         cropper = RandSpatialCrop(roi_size=self.crop_size)
@@ -58,7 +63,7 @@ class MicroSplitHCSDataset(Dataset):
 
         # get superimposed image
         mix_coeffs = torch.empty(multi_ch_img.shape[0]).uniform_(*self.mix_coeff_range)
-        mixed_img = torch.mean(multi_ch_img * mix_coeffs[:, None], dim=0, keepdim=True)
+        mixed_img = torch.mean(multi_ch_img * mix_coeffs[:, None, None], dim=0, keepdim=True)
 
         return {
             "input": mixed_img,
@@ -80,7 +85,8 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
         num_workers: int = 3,
         split_ratio: float = 0.8,
         random_state: int = 42,
-        augmentations: list[Callable] = []
+        augmentations: list[Callable] = [],
+        mix_coeff_range: tuple[float, float] = (0.0, 1.0)
     ) -> None:
         super().__init__()
         self.ome_zarr_path = ome_zarr_path
@@ -92,6 +98,7 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
         self.split_ratio = split_ratio
         self.random_state = random_state
         self.augmentations = augmentations
+        self.mix_coeff_range = mix_coeff_range
 
     def _set_fit_global_state(self, num_positions: int) -> torch.Tensor:
         # disable metadata tracking in MONAI for performance
@@ -113,12 +120,14 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito', 'er', 'nuclei'],
             transforms=self.augmentations,
+            mix_coeff_range=self.mix_coeff_range
         )
         self.val_dataset = MicroSplitHCSDataset(
             positions=positions[num_train_fovs:],
             crops_per_position=self.crops_per_position,
             source_channel_names=['mito', 'er', 'nuclei'],
-            transforms=None
+            transforms=None,
+            mix_coeff_range=self.mix_coeff_range
         )
 
     def train_dataloader(self):
