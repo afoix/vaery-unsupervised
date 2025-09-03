@@ -132,8 +132,8 @@ class SalamanderVAE(LightningModule):
                 # this_recon_c = np.max(this_recon[c].cpu().numpy(), axis=-1)
                 this_target_c = this_target[c, :, :, z_slice].cpu().numpy()
                 this_recon_c = this_recon[c, :, :, z_slice].cpu().numpy()
-                ax[c, 0].imshow(this_target_c)
-                ax[c, 1].imshow(this_recon_c)
+                ax[c, 0].imshow(this_target_c, cmap='gray')
+                ax[c, 1].imshow(this_recon_c, cmap='gray')
 
                 ax[c, 0].axis('off')
                 ax[c, 1].axis('off')

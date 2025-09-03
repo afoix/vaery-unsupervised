@@ -9,7 +9,7 @@ from vaery_unsupervised.dataloaders.sal_brain_loader import SalBrainDataModule
 from lightning.pytorch.callbacks import ModelCheckpoint#, LearningRateMonitor
 from lightning.pytorch import seed_everything
 
-seed_everything(666)
+seed_everything(111)
 
 def main():
 
@@ -20,9 +20,10 @@ def main():
     #                            )
 
     dataset = SalBrainDataModule(batch_size=16, 
-                                patch_size=(32, 32, 32), 
+                                patch_size=(64, 64, 64), 
                                 num_workers=96, 
                                 pin_memory=True, 
+                                persistent_workers=True,
                                 )
     
     dataset.setup("fit")
@@ -33,7 +34,7 @@ def main():
     batch_shape = sample.shape
     print(f"Batch shape: {batch_shape}")
 
-    model = SalamanderVAE(beta=1e-12, 
+    model = SalamanderVAE(beta=1e-24, 
                    matrix_size=32,
                    latent_size=256, 
                    n_chan=batch_shape[1], 
