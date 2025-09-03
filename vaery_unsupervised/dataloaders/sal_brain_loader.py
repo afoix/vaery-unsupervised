@@ -11,7 +11,7 @@ import numpy as np
 from typing import Tuple, Union, List
 
 _logger = logging.getLogger("lightning.pytorch")
-_logger.setLevel(logging.DEBUG)
+#_logger.setLevel(logging.DEBUG)
 
 class SalBrainDataModule(L.LightningDataModule):
     """
@@ -111,6 +111,7 @@ class SalBrainDataset(Dataset):
                  batch_size: int, 
                  patch_size: Union[List, Tuple], 
                  mask_channel: int=1,
+                 num_total_samples: int=500,
                  #normalizations: List=[], 
                  #augmentations: List=[], 
                  ):
@@ -131,12 +132,13 @@ class SalBrainDataset(Dataset):
         self.mask = self.volume[0, mask_channel].copy().astype(bool)
         self.bounding_box = get_bounding_box(self.mask)
         self.volume_shape = self.volume.shape
+        self.num_total_samples = num_total_samples
 
         self.transformations = v2.Compose([v2.Normalize(mean=[0.0 for i in range(self.n_channels)], 
                                                   std=[1.0 for i in range(self.n_channels)])])
         self.indices = random_patch_sampler(self.bounding_box, 
                                             self.patch_size, 
-                                            num_samples=batch_size,  # *100??
+                                            num_samples=num_total_samples,  # *100??
                                             binary_mask=self.mask)
 
 
@@ -175,7 +177,6 @@ def get_bounding_box(brainary_mask: np.array, pad: int=0) -> Tuple:
     x_min, x_max = np.min(x_coords) - pad, np.max(x_coords) + pad
 
     bb_size = (z_max - z_min, y_max - y_min, x_max - x_min)
-    print(f"Bounded size {bb_size[0], bb_size[1], bb_size[2]}")
 
     bbox = (z_min, z_max, y_min, y_max, x_min, x_max)
     assert all(b >= 0 for b in bbox), f"Bounding box is out of bounds: {bbox}, padding may be too large"
@@ -229,4 +230,5 @@ def random_patch_sampler(bbox: Tuple,
                                 y_start, y_end,
                                 x_start, x_end))
                 i += 1
+    _logger.debug(f'patches: {len(patches)}')
     return patches

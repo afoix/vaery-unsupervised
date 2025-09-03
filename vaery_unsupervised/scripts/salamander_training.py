@@ -6,7 +6,7 @@ import torch
 
 from vaery_unsupervised.networks.SalamanderVAE import SalamanderVAE
 from vaery_unsupervised.dataloaders.sal_brain_loader import SalBrainDataModule
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.callbacks import ModelCheckpoint#, LearningRateMonitor
 from lightning.pytorch import seed_everything
 
 seed_everything(666)
@@ -19,7 +19,7 @@ def main():
     #                            name="sal_model_1", 
     #                            )
 
-    dataset = SalBrainDataModule(batch_size=32, 
+    dataset = SalBrainDataModule(batch_size=16, 
                                 patch_size=(32, 32, 32), 
                                 num_workers=96, 
                                 pin_memory=True, 
@@ -33,23 +33,26 @@ def main():
     batch_shape = sample.shape
     print(f"Batch shape: {batch_shape}")
 
-    model = SalamanderVAE(beta=1e-3, 
+    model = SalamanderVAE(beta=1e-12, 
                    matrix_size=32,
-                   latent_size=128, 
-                   n_chan=batch_shape[1])
+                   latent_size=256, 
+                   n_chan=batch_shape[1], 
+                   z_dir="/home/jnc2161/mbl/latent"
+                   )
     
     logger_tb = TensorBoardLogger(
         save_dir='/home/jnc2161/mbl/logs',
         name='sal_model_v1'
     )
     trainer = L.Trainer(accelerator="gpu", 
-                        precision='16-mixed',
+                        #precision='16-mixed',
                         max_epochs=1000,
                         check_val_every_n_epoch=5,
                         logger=logger_tb,
+                        log_every_n_steps=1,
                         callbacks=[
-                            ModelCheckpoint(save_top_k=10, monitor="val/loss",every_n_epochs=1)
-                        ]
+                            ModelCheckpoint(save_top_k=10, monitor="val/loss",every_n_epochs=5)
+                            ]
                         )
 
     trainer.fit(model=model, 

@@ -130,8 +130,6 @@ class ResNet18Dec(nn.Module):
     layer2 128 -> 64
     layer1 64 -> 64
     SIGMOID(Conv1 64 -> nc)
-    FINAL LINEAR:
-    linear 512 -> z_dim
     """
 
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=32):
@@ -150,7 +148,7 @@ class ResNet18Dec(nn.Module):
         self.layer1 = self._make_layer(BasicBlockDec, 64, num_Blocks[0], stride=1)
 
         self.conv1 = ResizeConv3d(64, nc, kernel_size=3, scale_factor=2)
-        self.final_linear = torch.nn.Linear(32**3, self.out_features**3)
+        #self.final_linear = torch.nn.Linear(32**3, self.out_features**3)
 
     def _make_layer(self, BasicBlockDec, features, num_Blocks, stride):
         strides = [stride] + [1]*(num_Blocks-1)
@@ -167,9 +165,8 @@ class ResNet18Dec(nn.Module):
         x = self.layer2(x)
         x = self.layer1(x)
         x = torch.sigmoid(self.conv1(x))
-        b,c,w,h,d = x.shape
-        x = self.final_linear(x.view(b,c,w*h*d))
-        return x.view(b,c,self.out_features, self.out_features, self.out_features)
+
+        return x
     
     
 class VAEResNet18(nn.Module):
