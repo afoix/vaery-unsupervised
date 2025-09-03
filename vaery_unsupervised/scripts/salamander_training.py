@@ -15,9 +15,9 @@ def main():
 
     torch.set_float32_matmul_precision('high')
 
-    model_name = 'sal_model_v1_z1024'
+    model_name = 'sal_model_v1_z1024_b32_e15'
 
-    dataset = SalBrainDataModule(batch_size=5, 
+    dataset = SalBrainDataModule(batch_size=32, 
                                 patch_size=(32, 32, 32), 
                                 num_workers=96, 
                                 pin_memory=True, 
@@ -32,9 +32,9 @@ def main():
     batch_shape = sample.shape
     print(f"Batch shape: {batch_shape}")
 
-    model = SalamanderVAE(beta=1e-24, 
+    model = SalamanderVAE(beta=1e-15, 
                    matrix_size=32,
-                   latent_size=4096, 
+                   latent_size=1024, 
                    n_chan=batch_shape[1], 
                    z_dir=f"/home/jnc2161/mbl/{model_name}_latent"
                    )
