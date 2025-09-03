@@ -1,0 +1,179 @@
+    # Extract both embeddings and projections
+#%%
+import lightning as L
+from typing import Callable
+import numpy as np
+import pytorch_lightning as pl
+import torch
+from iohub import open_ome_zarr
+from iohub.ngff import Position
+from monai.data import set_track_meta
+from monai.transforms import Compose, ToTensord
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
+from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop
+import logging
+from typing import Literal
+import torch.nn.functional as F
+from lightning import LightningModule
+from monai.networks.nets.resnet import ResNetFeatures
+from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
+from torch import Tensor, nn
+from typing_extensions import TypedDict
+
+from vaery_unsupervised.dataloaders.hcs_dataloader_ryan import HCSDataModule
+from vaery_unsupervised.networks.hcs_contrastive import ResNetEncoder, ContrastiveModule
+from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks import ModelCheckpoint
+from pathlib import Path
+import torchview
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+#%%
+#Load data module
+ome_zarr_path = "/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_ome2.zarr"
+
+data_module = HCSDataModule(
+        ome_zarr_path=ome_zarr_path,
+        source_channel_names=['mito','er','nuclei'],
+        weight_channel_name='nuclei',
+        crop_size=(128, 128),
+        crops_per_position=4,
+        batch_size=32,
+        num_workers=6,
+        split_ratio=0.8,
+        normalization_transform=[],
+        augmentations=[]
+    )
+
+data_module.setup(stage='val')
+#%%
+
+val_loader = data_module.val_dataloader()
+
+#%%
+
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_22/checkpoints/last.ckpt"
+
+hcs_encoder_config = {
+    "backbone": "resnet18",
+    "in_channels": 3,
+    "spatial_dims": 2,
+    "embedding_dim": 512,
+    "mlp_hidden_dims": 768,
+    "projection_dim": 128,
+    "pretrained": False,
+}
+hcs_encoder = ResNetEncoder(**hcs_encoder_config)
+
+model = ContrastiveModule.load_from_checkpoint(
+    ckpt_path,
+    encoder=hcs_encoder,
+    loss=SelfSupervisedLoss(NTXentLoss(temperature=0.07)),
+    lr=1e-4,
+)
+model = model.cuda()
+model.eval()
+
+#%%
+all_emb, all_proj, all_positions = [], [], []
+with torch.no_grad():
+    for batch in val_loader:
+        emb, proj = model.encoder(batch["anchor"].cuda())
+        all_emb.append(emb.cpu())
+        all_proj.append(proj.cpu())
+        all_positions.extend(batch["position"])
+
+all_emb = torch.cat(all_emb, dim=0).numpy()
+all_proj = torch.cat(all_proj, dim=0).numpy()
+
+#%%
+
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+# Reduce to 2D
+pca = PCA(n_components=2)
+proj_2d = pca.fit_transform(all_proj)
+
+# Map positions to integer labels for coloring
+unique_positions = list(set(all_positions))
+pos_to_idx = {pos: i for i, pos in enumerate(unique_positions)}
+colors = [pos_to_idx[p] for p in all_positions]
+
+# Plot
+plt.figure(figsize=(10, 8))
+scatter = plt.scatter(proj_2d[:, 0], proj_2d[:, 1], 
+                      c=colors, cmap="tab20", alpha=0.6)
+
+# Add legend with position IDs
+handles, _ = scatter.legend_elements(num=len(unique_positions))
+plt.legend(handles, unique_positions, title="Positions", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("PCA of Contrastive Projections by Position")
+plt.tight_layout()
+plt.show()
+
+
+
+# pca = PCA(n_components=2)
+# proj_2d = pca.fit_transform(all_proj)
+
+# plt.figure(figsize=(8,6))
+# plt.scatter(proj_2d[:,0], proj_2d[:,1], alpha=0.5)
+# plt.xlabel("PC1")
+# plt.ylabel("PC2")
+# plt.title("PCA of Contrastive Projections")
+# plt.show()
+
+#%%
+main()
+
+
+#%%
+
+
+import json
+from pathlib import Path
+
+# path to your dataset
+zarr_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_ome.zarr")
+
+# open the .zattrs file at the root
+zattrs_file = zarr_path / ".zattrs"
+with open(zattrs_file, "r") as f:
+    zattrs = json.load(f)
+
+print(json.dumps(zattrs, indent=2))
+ #%%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

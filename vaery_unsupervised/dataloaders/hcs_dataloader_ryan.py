@@ -93,6 +93,7 @@ class ContrastiveHCSDataset(Dataset):
             # "positive": positive[0],
             "anchor": anchor,
             "positive": positive,
+            "position": str(position),
             # "fov_id": position.name #TODO check if we need the fov_id
         }
     

@@ -106,34 +106,15 @@ model_graph = torchview.draw_graph(
 )
 
 model_graph.visual_graph
-# Save as figure
-# model_graph.save("~/hcs_contrastive_rm.png")
-
-
-
-
 
 #%%
-# emb, proj = hcs_encoder(batch_sample['anchor'])
-
-# print(batch_sample['anchor'])
-
-#%%
-# trainer = L.Trainer(
-#     devices="auto",
-#     accelerator="gpu",
-#     strategy="auto",
-#     precision="16-mixed",
-#     max_epochs=100,
-# )
-
 
 logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/logs")
 logging_path.mkdir(exist_ok=True)
 logger = TensorBoardLogger(save_dir=logging_path,name="contrastive_first")
 def main(*args, **kwargs):
     trainer = L.Trainer(
-        max_epochs = 100, accelerator = "gpu", precision = "32", logger=logger,
+        max_epochs = 200, accelerator = "gpu", precision = "32", logger=logger,
         callbacks=[
             ModelCheckpoint(
                 save_last=True, save_top_k=8, monitor='loss/val', every_n_epochs=1
