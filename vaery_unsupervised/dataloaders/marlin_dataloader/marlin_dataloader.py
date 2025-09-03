@@ -13,12 +13,45 @@ import random
 T = 60 # Number of timepoints
 KEY_FL = 'fluorescence'
 KEY_SEG = 'segmentation'
+USE_ALL_T = True
 
 from monai.transforms import (
     Compose,
     NormalizeIntensity,
     Lambda,
 )
+
+import numpy as np
+
+def stack_image_horizontally(img):
+    """
+    Stacks an image horizontally until its total width is equal to its height.
+    Assumes the image is a 2D NumPy array.
+    """
+    h, w = img.shape
+    
+    if w >= h:
+        raise ValueError("Image width must be less than height.")
+        # If the width is already greater than or equal to the height,
+        # return the original image to avoid infinite stacking.
+        # return img
+    
+    # Calculate how many full repetitions are needed
+    repetitions = h // w
+    
+    # Use hstack to stack the image `repetitions` times
+    stacked_img = np.hstack([img] * repetitions)
+    
+    # Calculate the remaining width to make it equal to height
+    remaining_width = h % w
+    
+    if remaining_width > 0:
+        # Get the slice of the original image needed for the remaining width
+        remaining_slice = img[:, :remaining_width]
+        # Stack the slice onto the repeated image
+        stacked_img = np.hstack([stacked_img, remaining_slice])
+        
+    return stacked_img
 
 def center_image(img):
     h, w = img.shape
@@ -28,6 +61,25 @@ def center_image(img):
     x_offset = (D - w) // 2
     out[y_offset:y_offset+h, x_offset:x_offset+w] = img
     return out
+
+def find_image_in_hdf5_file(hdf5_headpath,
+    gene_id, grna_id, grna_file_trench_index, timepoint
+):
+    filename = hdf5_headpath / f"{gene_id}/{grna_id}.hdf5"
+    with h5py.File(filename, 'r') as f:
+        img_fl = f[KEY_FL][grna_file_trench_index, timepoint]
+        # img_seg = f[KEY_SEG][grna_file_trench_index, timepoint]
+    return img_fl#, img_seg
+
+def find_images_anchor_pos_in_hdf5_file(hdf5_headpath,
+    gene_id, grna_id, grna_file_trench_index, timepoint
+):
+    filename = hdf5_headpath / f"{gene_id}/{grna_id}.hdf5"
+    with h5py.File(filename, 'r') as f:
+        img_pos = f[KEY_FL][grna_file_trench_index, timepoint]
+        img_anc = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T]
+        
+    return img_anc, img_pos
 
 # Shift parameteres
 MEAN_OVER_DATASET = 13
@@ -62,31 +114,57 @@ class MarlinDataset(Dataset):
     def __getitem__(self, index: int):
         metadata_sample = self.metadata.iloc[index]
         # Get indices to find files
-        gene_id, grna_id, grna_file_trench_index, timepoint = metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+        gene_id, grna_id, grna_file_trench_index, timepoint =(metadata_sample
+            [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+        )
+        if USE_ALL_T:
+            img_fl_anchor, img_fl_pos = find_images_anchor_pos_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=gene_id,
+                grna_id=grna_id,
+                grna_file_trench_index=grna_file_trench_index,
+                timepoint=timepoint
+            )
+        else:
         # Using only the next timepoint, reset to the first timepoint if chose the last timepoint
-        filename = self.data_path / f"{gene_id}/{grna_id}.hdf5"
+            img_fl_anchor = find_image_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=gene_id,
+                grna_id=grna_id,
+                grna_file_trench_index=grna_file_trench_index,
+                timepoint=-1
+            )
 
-    
-        with h5py.File(filename, 'r') as f:
-            #### Two timepoints
-            img_fl_anchor = f[KEY_FL][grna_file_trench_index, timepoint]
-            img_fl_pos = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
-            # img_seg_anchor = f[KEY_SEG][grna_file_trench_index, timepoint]
-            # img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
+            metadata_pos = (self.metadata
+                .loc[lambda df_: (df_['gene_id'] == gene_id) 
+                    & (df_['grna_file_trench_index'] != grna_file_trench_index)]
+                .sample(n=1)
+                .iloc[0]
+            )
 
+            pos_gene_id, pos_grna_id, pos_grna_file_trench_index, pos_timepoint = (metadata_pos
+                [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+            )
+
+            img_fl_pos = find_image_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=pos_gene_id,
+                grna_id=pos_grna_id,
+                grna_file_trench_index=pos_grna_file_trench_index,
+                timepoint=-1
+            )
 
         # standardize the pixel values and convert to float 32
         img_fl_anchor = img_fl_anchor.astype(np.float32)
         img_fl_pos = img_fl_pos.astype(np.float32)
 
-        
         # img_fl_anchor = (img_fl_anchor - np.mean(img_fl_anchor)) / np.std(img_fl_anchor)
         # img_fl_pos = (img_fl_pos - np.mean(img_fl_pos)) / np.std(img_fl_pos)
         # Set your desired output size
         # TODO DECIDE IF INCLUDING SEG
         # TODO make this a transform
-        img_fl_anchor = center_image(img_fl_anchor)
-        img_fl_pos = center_image(img_fl_pos)
+        img_fl_anchor = stack_image_horizontally(img_fl_anchor)
+        img_fl_pos = stack_image_horizontally(img_fl_pos)
         # img_seg_anchor = self.center_image(img_seg_anchor)
         # img_seg_pos = self.center_image(img_seg_pos)
 
@@ -103,13 +181,14 @@ class MarlinDataset(Dataset):
         img_fl_anchor = img_fl_anchor[None,...]
         img_fl_pos = img_fl_pos[None,...]
         
-        if self.transform: # TODO ADD CENTERING HERE!
+        # if self.transform: # TODO ADD CENTERING HERE!
         #     img_fl_anchor = self.transform(img_fl_anchor)
         #     img_fl_pos = self.transform(img_fl_pos)
 
         # TODO: CASE FOR TESTING/PREDICTING
         # if self.train_mode:
-            imgs = {'anchor': img_fl_anchor, 'positive':img_fl_pos}
+        imgs = {'anchor': img_fl_anchor, 'positive':img_fl_pos}
+        if self.transform:
             imgs = self.transform(imgs)
 
         return imgs
@@ -206,3 +285,4 @@ class MarlinDataModule(L.LightningDataModule):
             pin_memory=True,
             prefetch_factor=self.prefetch_factor
         )
+# %%

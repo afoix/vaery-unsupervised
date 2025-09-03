@@ -39,7 +39,7 @@ transforms = Compose([
         keys=["positive"],
         spatial_axis=0,
         prob=1,
-    )
+    ),
     RandFlipd(
         keys=["positive"],
         spatial_axis=1,
@@ -51,7 +51,7 @@ transforms = Compose([
 #%%
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
+METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle'
 #Adjust Metadata
 # metadata = pd.read_pickle(HEADPATH/'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
 # metadata_compact = (metadata
@@ -101,7 +101,7 @@ import time
 
 for batch in dataloader:
     fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-    fig.patch.set_facecolor('black')
+    # fig.patch.set_facecolor('black')
     ax[0].imshow(batch['anchor'].numpy()[0, 0], cmap='gray')
     ax[1].imshow(batch['positive'].numpy()[0, 0], cmap='gray')
     # Pause for 2 seconds

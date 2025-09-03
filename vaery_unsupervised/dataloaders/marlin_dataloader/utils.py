@@ -72,30 +72,6 @@ def compute_mean_and_std_over_sample(
     std_sample = weighted_std / n_images
     return n_images, mean_sample, std_sample
 
-#%%
-
-
-
-if not include_time:
-    print('Get only last frame')
-    metadata = (pd
-        .read_pickle(METADATA_FILENAME)
-        .groupby('gene_grna_trench_index')
-        .last()
-        .reset_index()
-    )
-else:
-    metadata = (pd
-        .read_pickle(METADATA_FILENAME)
-    )
-
-metadata_filtered = (metadata
-    .loc[metadata['oDEPool7_id'].isin(GRNAS_IDS_TO_KEEP)]
-    .reset_index(drop=True)
-)
-metadata_filtered.to_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl')
-# genes_to_separate
-metadata_filtered
 
 def filter_metadata_by_grna(
     metadata_filename: str,
@@ -126,47 +102,145 @@ def filter_metadata_by_grna(
     return metadata_filtered
 
 
+
+#%%
+
+
+
+if not include_time:
+    print('Get only last frame')
+    metadata = (pd
+        .read_pickle(METADATA_FILENAME)
+        .groupby('gene_grna_trench_index')
+        .last()
+        .reset_index()
+    )
+else:
+    metadata = (pd
+        .read_pickle(METADATA_FILENAME)
+    )
+
+metadata_filtered = (metadata
+    .loc[metadata['oDEPool7_id'].isin(GRNAS_IDS_TO_KEEP)]
+    .reset_index(drop=True)
+)
+metadata_filtered.to_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl')
+# genes_to_separate
+metadata_filtered
+
 #%%
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_FILENAME = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
 OUTPUT_FILENAME = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
 include_time = True
 GRNAS_IDS_TO_KEEP = [9577, 6197, 1809, 7591, 11017]
-
-filter_metadata_by_grna(
-    metadata_filename=METADATA_FILENAME,
-    output_filename=OUTPUT_FILENAME,
-    grna_ids_to_keep=GRNAS_IDS_TO_KEEP,
-    include_time=include_time
-)
-
+KEY_FL = 'fluorescence'
+KEY_SEG = 'segmentation'
+# filter_metadata_by_grna(
+#     metadata_filename=METADATA_FILENAME,
+#     output_filename=OUTPUT_FILENAME,
+#     grna_ids_to_keep=GRNAS_IDS_TO_KEEP,
+#     include_time=include_time
+# )
 #%%
 metadata_filt = pd.read_pickle(OUTPUT_FILENAME)
 metadata_filt
 # Generate a lookup dictionary
-metadata_lookup = {gene_id: {} for gene_id in metadata_filt['gene_id'].unique()}
 for gene_id in metadata_lookup.keys():
-    metadata_lookup[gene_id]['oDEPool7_ids']
+    metadata_lookup[gene_id]['oDEPool_ids']
 #%%
-metadata[metadata['Gene']=='hemC']['oDEPool7_id'].unique()
+metadata = pd.read_pickle(METADATA_FILENAME).groupby('gene_grna_trench_index').last().reset_index()
 #%%
-KEY_FL = 'fluorescence'
-KEY_SEG = 'segmentation'
+gene = 'ftsN'
+print(metadata[metadata['Gene']==gene]['oDEPool7_id'].unique())
+#%%
+print(metadata[metadata['Gene']==gene]['oDEPool7_id'].unique())
+grna_id = 24209,
+metadata_grna = metadata[metadata['oDEPool7_id'] == grna_id]
+print(len(metadata_grna))
+# Show the first N images as a horizontal stack
+N = np.min([7,len(metadata_grna)])
+H = 150
+W = 21
+image_stack = np.zeros((H, W*N))
+for i in range(N):
+    gene_id, grna_id, grna_file_trench_index = metadata_grna.iloc[i][['gene_id', 'oDEPool7_id', 'grna_file_trench_index']]
+    with h5py.File(HEADPATH / 'Ecoli_lDE20_Exps-0-1' / f"{gene_id}/{grna_id}.hdf5", 'r') as f:
+        img_fl = f[KEY_FL][grna_file_trench_index][-1]
+        # img_seg = f[KEY_SEG][grna_file_trench_index][:]
+    image_stack[:, i*W:(i+1)*W] = img_fl
+plt.imshow(image_stack)
+plt.xticks([]);plt.yticks([])
+
 # Load an image given an oDEPool7_id
 grna_id = 11017 #ftsN: 9577 Choose this, rplQ: 6197, alaS:1809 (not much of a ptype) # mreD: 7591 # hemC: 11017
 
-metadata_grna = metadata[metadata['oDEPool7_id'] == grna_id]
-print(len(metadata_grna))
- #%%
-gene_id, grna_id, grna_file_trench_index = metadata_grna.iloc[5][['gene_id', 'oDEPool7_id', 'grna_file_trench_index']]
+grnas_chosen = {
+    'ftsN': ['9577', '9586', '9588', '24197', '24199','24200', '24205', '24207', '24208', '24209'],
+    'rplQ': ['6197', '6199', '6201', '6202', '6203'],
+    'alaS': ['1807', '1809','1815','1816', '1817', '1819','18731',
+             '18734','18735','18738','18744'],
+    'mreD': ['7591', '7592','7593', '7594', '22799', 
+             '22801', '22802', '22803', '22804', '22805'],
+    'hemC': ['11016','11017','11018','11019','11021', '11022', 
+             '11036', '11039','25196']
+}
 
-with h5py.File(HEADPATH / 'Ecoli_lDE20_Exps-0-1' / f"{gene_id}/{grna_id}.hdf5", 'r') as f:
-    img_fl = f[KEY_FL][grna_file_trench_index][:]
-    img_seg = f[KEY_SEG][grna_file_trench_index][:]
+all_grnas_chosen = [int(item) for sublist in grnas_chosen.values() for item in sublist]
+all_grnas_chosen
+#%% Filter for the genes and gRNAs chosen
+metadata_grnas_to_keep = (metadata
+    .loc[metadata['oDEPool7_id'].isin(all_grnas_chosen)]
+    .sort_values(['gene_id', 'oDEPool7_id'])
+    .reset_index(drop=True)
+    # Assign new gene
+)
+metadata_grnas_to_keep.to_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_lastT.pickle')
+#%% Reproduce sampling
+metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_lastT.pickle')
+#%%
 
-plt.imshow(img_fl[-1])
+def find_image_in_hdf5_file(
+    gene_id, grna_id, grna_file_trench_index, timepoint
+):
+    filename = HEADPATH / 'Ecoli_lDE20_Exps-0-1' / f"{gene_id}/{grna_id}.hdf5"
+    with h5py.File(filename, 'r') as f:
+        img_fl = f[KEY_FL][grna_file_trench_index, timepoint]
+        # img_seg = f[KEY_SEG][grna_file_trench_index, timepoint]
+    return img_fl#, img_seg
+
+index = 2
+metadata_sample = metadata.iloc[index]
+gene_id, grna_id, grna_file_trench_index, timepoint = (metadata_sample
+    [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+)
+img_fl_anchor = find_image_in_hdf5_file(
+    gene_id, grna_id, grna_file_trench_index, -1
+)
+
+# Get the potential positives
+metadata_pos = (metadata
+    .loc[lambda df_: (df_['gene_id'] == gene_id) 
+         & (df_['grna_file_trench_index'] != grna_file_trench_index)]
+    .sample(n=1)
+    .iloc[0]
+)
+# Choose a random row
+metadata_pos_sample = metadata_pos.sample(n=1).iloc[0]
+gene_id, grna_id, grna_file_trench_index, timepoint = (metadata_pos_sample
+    [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+)
+img_fl_pos = find_image_in_hdf5_file(
+    gene_id, grna_id, grna_file_trench_index, -1
+)
+
+plt.imshow(np.hstack([img_fl_anchor, img_fl_pos]))
+
+    # img_seg_anchor = f[KEY_SEG][grna_file_trench_index, timepoint]
+    # img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
+# Using only the next timepoint, reset to the first timepoint if chose the last timepoint
+# filename = self.data_path / f"{gene_id}/{grna_id}.hdf5"
 #%% gRNAs to select
-grna_ids_to_keep = 
 metadata_grnas_to_keep = metadata[metadata['oDEPool7_id'].isin(grna_ids_to_keep)]
 # metadata_grnas_to_keep.tail(50)
 #%%

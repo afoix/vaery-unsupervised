@@ -205,6 +205,18 @@ class ContrastiveModule(LightningModule):
         self._log_metrics(loss = loss, anchor= anchor_proj,  positive=positive_proj, stage= "val")
         return loss
     
+    def predict_step(
+        self,
+        batch
+    ):
+        anchor, positive = batch["anchor"], batch["positive"]
+        anchor_emb, anchor_proj = self(anchor)
+        # positive_emb, positive_proj = self(positive)
+
+        #Compute the loss with the projections pairs
+
+        return anchor_emb, anchor_proj
+
     def on_validation_epoch_end(self):
         _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
         super().on_validation_epoch_end()

@@ -1,4 +1,6 @@
 #%%
+%load_ext autoreload
+%autoreload 2
 from lightning import LightningModule
 from pathlib import Path
 import torch.nn.functional as F
@@ -62,7 +64,7 @@ transforms = Compose([
 ])
 
 LOGS_HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive/')
-checkpoint_path = LOGS_HEADPATH / 'version_4/checkpoints/last.ckpt'
+checkpoint_path = LOGS_HEADPATH / 'version_7/checkpoints/last.ckpt'
 
 marlin_encoder_config = {
     "backbone": "resnet18",
@@ -88,7 +90,7 @@ model = ContrastiveModule.load_from_checkpoint(
 )
 model.to(device)
 model.eval()
-#%%
+
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
 METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
@@ -99,21 +101,19 @@ METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_C
 # )
 # metadata_compact.to_pickle(HEADPATH/'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_compact.pkl')
 from vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule
+from sklearn.decomposition import PCA
 data_module = MarlinDataModule(
     data_path=HEADPATH/'Ecoli_lDE20_Exps-0-1/',
     metadata_path=METADATA_COMPACT_PATH,
     split_ratio=0.8,
-    batch_size=64,
+    batch_size=256,#64,
     num_workers=4,
     prefetch_factor=2,
     transforms=transforms,
 )
-# data_module.eval()
 
-#%%
-# data_module._prepare_data()
 data_module.setup(stage='predict')
-#%%
+
 trainer = L.Trainer(
         devices="auto",
         accelerator="gpu",
@@ -122,87 +122,60 @@ trainer = L.Trainer(
         max_epochs=1000,
         fast_dev_run=False,
         # logger=logger,
-        # log_every_n_steps=5,
-        # callbacks=[
-        #     ModelCheckpoint(
-        #         monitor="loss/val",
-        #         save_top_k=8,
-        #         every_n_epochs=1,
-        #         save_last=True
-        #     )
-        # ],
+        log_every_n_steps=5,
+        callbacks=[
+            ModelCheckpoint(
+                monitor="loss/val",
+                save_top_k=8,
+                every_n_epochs=1,
+                save_last=True
+            )
+        ],
     )
-
+#%%
 embeddings = trainer.predict(
     model=model,
     dataloaders=data_module.predict_dataloader(),
     return_predictions=True
 )
 #%%
-dataloader = data_module.predict_dataloader()
-imgs_anchor = []
-imgs_positive = []
-for i, batch in enumerate(dataloader):
-    img_anchor = batch['anchor'][0]
-    img_positive = batch['positive'][0]
-    imgs_anchor.append(img_anchor)
-    imgs_positive.append(img_positive)
-    if i == 0:
-        break
-#%%
-data_module.metadata
-#%%
-import numpy as np
-data_module.dataset.metadata
 
-dataset_size = len(data_module.dataset.metadata)
-embeddings = np.zeros((dataset_size, 512))
-projections = np.zeros((dataset_size, 32))
+#Get projection matrix
+projection_matrix = np.zeros((len(data_module.dataset.metadata), embeddings[0][1].shape[1]))
+
+current_datapoint = 0
+for batch in embeddings:
+    embeddings_batch, projection_batch = batch
+    len_batch = embeddings_batch.shape[0]
+    projection_matrix[current_datapoint:current_datapoint + len_batch] = projection_batch
+    current_datapoint += len_batch
 
 #%%
+from sklearn.decomposition import PCA
+# Perform PCA
+pca = PCA(n_components=3)
+pcs = pca.fit_transform(projection_matrix)
 
-emb_anchor, proj_anchor = model(img_anchor.to(device).unsqueeze(0))
-emb_positive, proj_positive = model(img_positive.to(device).unsqueeze(0))
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-print(F.cosine_similarity(proj_anchor, proj_positive))
-# fig.patch.set_facecolor('black')
-ax[0].imshow(img_anchor.numpy()[0], cmap='gray')
-ax[1].imshow(img_positive.numpy()[0], cmap='gray')
-for ax_ in ax:
-    ax_.axis('off')
-#%% Get embeddings
-index = 0
-emb_anchor, proj_anchor = model(img_anchor[index].to(device).unsqueeze(0))
-emb_positive, proj_positive = model(img_positive[index].to(device).unsqueeze(0))
-# emb_2, proj_2 = model(second)
-#%%
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-print(F.cosine_similarity(proj_anchor, proj_positive))
-fig.patch.set_facecolor('black')
-ax[0].imshow(batch['anchor'].numpy()[0, 0], cmap='gray')
-ax[1].imshow(batch['positive'].numpy()[0, 0], cmap='gray')
+# pcs is of shape (num_datapoints, 3), containing the first 3 principal components
+print("First 3 principal components shape:", pcs.shape)
 
 #%%
-single_anchor = dataloader.dataset[0]['anchor']
-single_positive = dataloader.dataset[0]['positive']
-#%%
-emb_single_anchor, proj_single_anchor = model(torch.from_numpy(single_anchor).unsqueeze(0).to(device))
-emb_single_positive, proj_single_positive = model(torch.from_numpy(single_positive).unsqueeze(0).to(device))
-#%%
-single_anchor
+metadata = data_module.dataset.metadata
 
+# Add other info to metadata
 #%%
-import time
-import matplotlib.pyplot as plt
-# for batch in dataloader:
-fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-fig.patch.set_facecolor('black')
-print(F.cosine_similarity(emb_anchor, emb_positive))
-ax[0].imshow(single_anchor[0], cmap='gray')
-ax[1].imshow(single_positive[0], cmap='gray')
-# # Pause for 2 seconds
-# plt.show()
-# # time.sleep(1)
-# plt.close()
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    pcs[:, 0], pcs[:, 1],
+    c=metadata['gene_id'].astype('category').cat.codes,
+    cmap='tab10',
+    alpha=0.2
+)
+plt.xlabel('PC1')
+plt.ylabel('PC2')
+plt.title('Projection onto First 2 Principal Components')
+plt.grid(True)
+cbar = plt.colorbar(scatter, ticks=range(len(metadata['gene_id'].unique())))
+cbar.ax.set_yticklabels(metadata['gene_id'].astype('category').cat.categories)
+plt.show()
+#%%

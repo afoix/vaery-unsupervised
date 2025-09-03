@@ -27,7 +27,8 @@ STD_OVER_DATASET = 11
 
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
+# METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
+METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle'
 
 
 transforms = Compose([
@@ -41,15 +42,14 @@ transforms = Compose([
     RandFlipd(
         keys=["positive"],
         spatial_axis=0,
-        prob=1,
+        prob=0.5,
     ),
     RandFlipd(
         keys=["positive"],
         spatial_axis=1,
-        prob=1,
+        prob=0.5,
     )
 ])
-
 
 def main(*args, **kwargs):
 
@@ -58,7 +58,7 @@ def main(*args, **kwargs):
     "in_channels": 1,
     "spatial_dims": 2,
     "embedding_dim": 512,
-    "mlp_hidden_dims": 768,
+    "mlp_hidden_dims": 256,#768,
     "projection_dim": 32,
     "pretrained": False,
     }
@@ -67,7 +67,7 @@ def main(*args, **kwargs):
     marlin_contrastive_config = {
         "encoder": marlin_encoder,
         "loss": SelfSupervisedLoss(NTXentLoss(temperature=0.07)),
-        "lr": 1e-3,
+        "lr": 1e-3,#1e-3,
     }
 
     marlin_contrastive = ContrastiveModule(**marlin_contrastive_config)
@@ -95,7 +95,7 @@ def main(*args, **kwargs):
         accelerator="gpu",
         strategy="auto",
         precision="16-mixed",
-        max_epochs=100,
+        max_epochs=1000,
         fast_dev_run=False,
         logger=logger,
         log_every_n_steps=5,
