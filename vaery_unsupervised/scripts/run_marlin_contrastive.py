@@ -12,11 +12,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
-from vaery_unsupervised.
+from vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule, MarlinDataset
 
-from dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule, MarlinDataset
-from networks.marlin_contrastive import ResNetEncoder, ContrastiveModule
-from networks.marlin_contrastive import projection_mlp
+from vaery_unsupervised.networks.marlin_contrastive import ResNetEncoder, ContrastiveModule
+
 from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
 
 from monai.transforms import (
@@ -24,27 +23,28 @@ from monai.transforms import (
     NormalizeIntensity,
 )
 
-MEAN_OVER_DATASET = 13
-STD_OVER_DATASET = 11
+# MEAN_OVER_DATASET = 13
+# STD_OVER_DATASET = 11
 
-transforms = Compose([
-    NormalizeIntensity(
-        subtrahend=MEAN_OVER_DATASET,
-        divisor=STD_OVER_DATASET,
-        nonzero=False,
-        channel_wise=False,
-        dtype = np.float32,
-    ),
-    # Lambda(func=center_image,
-    #        inv_func=None,
-    #        track_meta=True)
-])
+# transforms = Compose([
 
+#     NormalizeIntensity(
+#         subtrahend=MEAN_OVER_DATASET,
+#         divisor=STD_OVER_DATASET,
+#         nonzero=False,
+#         channel_wise=False,
+#         dtype = np.float32,
+#     ),
+#     # Lambda(func=center_image,
+#     #        inv_func=None,
+#     #        track_meta=True)
+# ])
+transforms=None
 
 #%%
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_compact.pkl'
+METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
 #Adjust Metadata
 # metadata = pd.read_pickle(HEADPATH/'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
 # metadata_compact = (metadata
@@ -66,17 +66,47 @@ data_module = MarlinDataModule(
 data_module._prepare_data()
 data_module.setup(stage='train')
 #%%
+import matplotlib.pyplot as plt
+batch_sample['anchor'].shape
+#%%
+plt.hist(batch_sample['anchor'].numpy().flatten(), bins=50)
+print(np.mean(batch_sample['anchor'].numpy()))
+print(np.std(batch_sample['anchor'].numpy()))
+#%%
+fig, ax = plt.subplots(1, 2, figsize=(10, 10))
+fig.patch.set_facecolor('black')
+# ax[0].set("off")
+# ax[1].set("off")
+ax[0].imshow(batch_sample['anchor'].numpy()[0, 0][:,65:85], cmap='gray')
+ax[1].imshow(batch_sample['positive'].numpy()[0, 0][:,65:85], cmap='gray')
+
+
+#%%
+plt.hist(batch_sample['positive'].numpy()[0, 0], bins=50)
+#%%
 dataloader = data_module.predict_dataloader()
-batch_sample = next(iter(dataloader))
+# batch_sample = next(iter(dataloader))
+# print(batch_sample['anchor'].shape)
+import time
+
+for batch in dataloader:
+    fig, ax = plt.subplots(1, 2, figsize=(10, 10))
+    fig.patch.set_facecolor('black')
+    ax[0].imshow(batch['anchor'].numpy()[0, 0], cmap='gray')
+    ax[1].imshow(batch['positive'].numpy()[0, 0], cmap='gray')
+    # Pause for 2 seconds
+    plt.show()
+    time.sleep(1)
+    plt.close()
 #%%
 marlin_encoder_config = {
-    "backbone": "resnet34",
+    "backbone": "resnet18",
     "in_channels": 1,
-    "spatial_dims": 3,
+    "spatial_dims": 2,
     "embedding_dim": 512,
     "mlp_hidden_dims": 768,
     "projection_dim": 128,
-    "pretrained": True,
+    "pretrained": False,
 }
 
 marlin_encoder = ResNetEncoder(**marlin_encoder_config)
@@ -89,31 +119,52 @@ marlin_contrastive_config = {
 }
 
 marlin_contrastive = ContrastiveModule(**marlin_contrastive_config)
+#%%
+marlin_contrastive(batch_sample['anchor'], batch_sample['positive'])
+
 
 #%%
-emb, proj = marlin_encoder(batch_sample['anchor'])
-# feature_map = marlin_encoder.resnet(batch_sample['anchor'])[-1]
+# emb, proj = marlin_encoder(batch_sample['anchor'])
+feature_map = marlin_encoder.resnet(batch_sample['anchor'])[-1]
 # embedding = marlin_encoder.resnet.avgpool(feature_map)
 # embedding = embedding.view(embedding.size(0), -1)
 # print(embedding.shape)
-
+#%%
 #%%
 import torchview
 model_graph = torchview.draw_graph(
     marlin_contrastive,
-    input_size=(32, 1, 1, 150, 150),
+    input_size=(32, 1, 150, 150),
 )
 
 model_graph.visual_graph
 # Save as figure
-model_graph.save("~/marlin_contrastive_graph.png")
+# model_graph.save("~/marlin_contrastive_graph.png")
 #%%
+from lightning.pytorch.loggers import TensorBoardLogger
+logger = TensorBoardLogger(
+    save_dir=HEADPATH/"tb_logs",
+    name="marlin_contrastive",
+)
+
+#%%
+
+
+
 trainer = L.Trainer(
     devices="auto",
     accelerator="gpu",
     strategy="auto",
     precision="16-mixed",
-    max_epochs=1,
+    max_epochs=100,
+    fast_dev_true=False,
+    logger=logger,
+    callback=[
+        L.callbacks.ModelCheckpoint(
+            monitor="loss/val",
+            save_top_k=8)
+    ]
+
 )
 
 trainer.fit(

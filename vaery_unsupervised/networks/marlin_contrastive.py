@@ -37,11 +37,11 @@ class ResNetEncoder(nn.Module):
         self, 
         backbone: str,
         in_channels: int = 1,
-        spatial_dims: int = 3,#2,
+        spatial_dims: int = 2,#2,
         embedding_dim: int = 512,#768,
         mlp_hidden_dims: int = 768,
         projection_dim: int = 128,
-        pretrained: bool = True,
+        pretrained: bool = False,
     ):
         """
         ResNetEncoder modified with the projection MLP layer for contrastive learning
@@ -180,7 +180,7 @@ class ContrastiveModule(LightningModule):
             #     loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        self._log_metrics(loss, anchor, positive, "train")
+        self._log_metrics(loss, anchor.detach(), positive.detach(), "train")
         return loss
 
     def configure_optimizers(self):
@@ -189,7 +189,7 @@ class ContrastiveModule(LightningModule):
             return self.optimizer(self.parameters(), lr=self.lr)
         else:
             return torch.optim.Adam(self.parameters(), lr=self.lr)
-
+    
     def validation_step(
         self,
         batch: ContrastiveSample, batch_idx: int
@@ -202,7 +202,7 @@ class ContrastiveModule(LightningModule):
         loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        # self._log_metrics(loss, anchor, positive, "val")
+        self._log_metrics(loss = loss, anchor= anchor.detach(),  positive=positive.detach(), stage= "val")
         return loss
 
 
@@ -219,7 +219,7 @@ class ContrastiveModule(LightningModule):
             sync_dist=True,
         )
 
-        # Compute cosine similarity and euclidian distance for positive pairs
+        # Compute codsine similarity and euclidian distance for positive pairs
         cosine_sim_pos = F.cosine_similarity(anchor, positive, dim=1).mean()
         euclidean_dist_pos = F.pairwise_distance(anchor, positive).mean()
 
@@ -230,7 +230,7 @@ class ContrastiveModule(LightningModule):
         # lightning logger to tensorboard (at epoch level)
         self.log_dict(
             log_metric_dict,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             logger=True,
             sync_dist=True,
@@ -238,6 +238,3 @@ class ContrastiveModule(LightningModule):
 
     def _log_images(self, anchor: Tensor, positive: Tensor, stage: Literal["train", "val"]):
         NotImplementedError("Logging images is not implemented")
-
-
-#%%
