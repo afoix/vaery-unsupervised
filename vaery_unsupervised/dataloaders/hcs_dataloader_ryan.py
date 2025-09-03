@@ -9,7 +9,7 @@ from monai.data import set_track_meta
 from monai.transforms import Compose, ToTensord
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
-from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop
+from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop, NormalizeIntensity
 
 
 class ContrastiveHCSDataset(Dataset):
@@ -53,7 +53,7 @@ class ContrastiveHCSDataset(Dataset):
         # mapping of the weighted_channel_index to the source_channel_indices
 
         #TODO open the position
-        img_cyx =position[0].oindex[0,source_channel_indices,0]
+        img_cyx = position[0].oindex[0, source_channel_indices, 0]
         weight_channel_index = self.source_channel_names.index('nuclei')
         weight_img = img_cyx[weight_channel_index:weight_channel_index+1]  # Shape: (1, Y, X)
         
@@ -62,13 +62,23 @@ class ContrastiveHCSDataset(Dataset):
             weight_map=weight_img,  # Remove channel dim, now (Y, X)
             num_samples=1
         )
-        crop_img = random_weighted_crop(img_cyx)
+        crop_img = random_weighted_crop(img_cyx)[0]
         
         #TODO apply the transform and the normalizations
         #compose the the monai transforms
+        #image -min (over max-min)
 
+        # norm_img = NormalizeIntensity()
+        
+        max_per = torch.quantile(crop_img, 0.95)
+        min_per = torch.quantile(crop_img, 0.05)
 
-        anchor = self.anchor_augmentations(crop_img)
+        norm_img = (crop_img - min_per) / (max_per - min_per)
+
+        if torch.isnan(norm_img).any():
+            norm_img = torch.nan_to_num(norm_img, nan=0.0, posinf=1.0, neginf=0.0)
+
+        anchor = self.anchor_augmentations(norm_img)
         positive = self.positive_augmentations(anchor)
 
         # anchor = anchor[:,None,...]
@@ -79,8 +89,10 @@ class ContrastiveHCSDataset(Dataset):
         return {
             # "anchor": anchor[0][:,None,...],
             # "positive": positive[0][:,None,...],
-            "anchor": anchor[0],
-            "positive": positive[0],
+            # "anchor": anchor[0],
+            # "positive": positive[0],
+            "anchor": anchor,
+            "positive": positive,
             # "fov_id": position.name #TODO check if we need the fov_id
         }
     
@@ -89,10 +101,12 @@ class ContrastiveHCSDataset(Dataset):
 
 
 class HCSDataModule(pl.LightningDataModule):
-    def __init__(self, ome_zarr_path, source_channel_names, weight_channel_name, crop_size=(256, 256),
-                 crops_per_position=4, batch_size=32, num_workers=4, 
-                 split_ratio=0.8, random_state=42, 
-                 normalization_transform=[], augmentations=[]):
+    def __init__(
+            self, ome_zarr_path, source_channel_names, weight_channel_name, crop_size=(256, 256),
+            crops_per_position=4, batch_size=32, num_workers=4, 
+            split_ratio=0.8, random_state=42, 
+            normalization_transform=[], augmentations=[]
+        ):
         super().__init__()
         self.ome_zarr_path = ome_zarr_path
         self.source_channel_names = source_channel_names

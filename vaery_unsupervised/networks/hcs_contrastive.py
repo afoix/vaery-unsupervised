@@ -21,9 +21,9 @@ class ContrastiveSample(TypedDict):
     positive: Tensor
 
 def projection_mlp(
-        in_dims: int,
-        hidden_dims: int,
-        out_dims: int
+    in_dims: int,
+    hidden_dims: int,
+    out_dims: int
 ) -> nn.Module:
     return nn.Sequential(
         nn.Linear(in_dims, hidden_dims),
