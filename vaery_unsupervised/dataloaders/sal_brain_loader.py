@@ -111,7 +111,7 @@ class SalBrainDataset(Dataset):
                  batch_size: int, 
                  patch_size: Union[List, Tuple], 
                  mask_channel: int=1,
-                 num_total_samples: int=500,
+                 num_total_samples: int=1600,
                  #normalizations: List=[], 
                  #augmentations: List=[], 
                  ):

@@ -36,7 +36,7 @@ def main():
 
     model = SalamanderVAE(beta=1e-24, 
                    matrix_size=32,
-                   latent_size=256, 
+                   latent_size=512, 
                    n_chan=batch_shape[1], 
                    z_dir="/home/jnc2161/mbl/latent"
                    )
