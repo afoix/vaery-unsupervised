@@ -9,18 +9,16 @@ from vaery_unsupervised.dataloaders.sal_brain_loader import SalBrainDataModule
 from lightning.pytorch.callbacks import ModelCheckpoint#, LearningRateMonitor
 from lightning.pytorch import seed_everything
 
-seed_everything(111)
+seed_everything(57)
 
 def main():
 
-    # torch.set_float32_matmul_precision('high')
+    torch.set_float32_matmul_precision('high')
 
-    # logger = TensorBoardLogger("tb_logs", 
-    #                            name="sal_model_1", 
-    #                            )
+    model_name = 'sal_model_v1_z1024'
 
-    dataset = SalBrainDataModule(batch_size=16, 
-                                patch_size=(64, 64, 64), 
+    dataset = SalBrainDataModule(batch_size=5, 
+                                patch_size=(32, 32, 32), 
                                 num_workers=96, 
                                 pin_memory=True, 
                                 persistent_workers=True,
@@ -36,14 +34,14 @@ def main():
 
     model = SalamanderVAE(beta=1e-24, 
                    matrix_size=32,
-                   latent_size=512, 
+                   latent_size=4096, 
                    n_chan=batch_shape[1], 
-                   z_dir="/home/jnc2161/mbl/latent"
+                   z_dir=f"/home/jnc2161/mbl/{model_name}_latent"
                    )
     
     logger_tb = TensorBoardLogger(
         save_dir='/home/jnc2161/mbl/logs',
-        name='sal_model_v1'
+        name=model_name
     )
     trainer = L.Trainer(accelerator="gpu", 
                         #precision='16-mixed',

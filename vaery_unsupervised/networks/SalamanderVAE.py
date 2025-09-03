@@ -67,8 +67,8 @@ class SalamanderVAE(LightningModule):
     def __init__(self, beta=1e-3, matrix_size=32, latent_size=128, n_chan=1, z_dir=""):
         super().__init__()
 
-        self.encode = ResNet18Enc(nc=n_chan, z_dim=latent_size)
-        self.decode = ResNet18Dec(nc=n_chan, z_dim=latent_size)
+        self.encode = ResNet18Enc(nc=n_chan, z_dim=latent_size, matrix_size=matrix_size)
+        self.decode = ResNet18Dec(nc=n_chan, z_dim=latent_size, matrix_size=matrix_size)
 
         # specify desired loss
         self.save_hyperparameters()
