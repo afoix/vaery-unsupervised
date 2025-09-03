@@ -24,12 +24,12 @@ from microsplit_reproducibility.notebook_utils.custom_dataset_2D import (
     get_unnormalized_predictions, get_target, get_input,
 )
 
-from vaery_unsupervised.dataloaders.microsplit.utils import (
+from vaery_unsupervised.microsplit.utils import (
     compute_metrics,
     show_metrics,
     full_frame_evaluation,
 )
-from vaery_unsupervised.dataloaders.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
+from vaery_unsupervised.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
 
 
 #%%
