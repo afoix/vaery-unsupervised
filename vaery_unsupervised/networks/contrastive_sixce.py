@@ -31,7 +31,7 @@ def projection_mlp(in_dims: int, hidden_dims: int, out_dims: int) -> nn.Module:
 
 class ResNetEncoder(nn.Module):
     def __init__(self, backbone: str,
-        in_channels: int = 1,
+        in_channels: int = 147,
         spatial_dims: int = 2, #3
         embedding_dim: int = 512,
         mlp_hidden_dims: int = 768,
@@ -158,12 +158,14 @@ class ContrastiveModule(LightningModule):
 
     def predict_step(self, batch, batch_idx):
         images = batch["anchor"]
+        cell_ids = batch["cell_id"]
 
         embedding, projection = self(images)
 
         return {
             'embeddings': embedding,
             'projections': projection,
+            'cell_ids': cell_ids,
             'batch_idx': batch_idx
         }
 
