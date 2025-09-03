@@ -1,7 +1,7 @@
 import lightning
 
 from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import SpatProteomicDataModule
-from vaery_unsupervised.networks.LitVAE_km import LitVAE
+from vaery_unsupervised.networks import LightningVAE_linear_km 
 
 
 def main(*args, **kwargs):

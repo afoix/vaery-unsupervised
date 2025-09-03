@@ -67,7 +67,7 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "linear_VAE_beta1neg10lr0.0001_tmuxtraining"
+model_name = "linear_VAE_tmuxtraining2"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
@@ -84,7 +84,7 @@ logger = TensorBoardLogger(save_dir=logging_path, name = model_name)
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(
-        max_epochs = 150, 
+        max_epochs = 300, 
         accelerator = "gpu", 
        # precision = "16-mixed", 
         logger=logger,
