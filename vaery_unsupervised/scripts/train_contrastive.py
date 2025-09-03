@@ -69,14 +69,14 @@ plt.show()
 # plt.imshow(batch_sample['positive'].numpy()[0,0], cmap='gray')
 
 #%%
-from tqdm import tqdm
-means = []
-stds = []
-for batch in tqdm(train_loader):
-    means.append(batch['anchor'].mean(dim=[0,2,3]))
-    means.append(batch['positive'].mean(dim=[0,2,3]))
-    stds.append(batch['anchor'].std(dim=[0,2,3]))
-    stds.append(batch['positive'].std(dim=[0,2,3]))
+# from tqdm import tqdm
+# means = []
+# stds = []
+# for batch in tqdm(train_loader):
+#     means.append(batch['anchor'].mean(dim=[0,2,3]))
+#     means.append(batch['positive'].mean(dim=[0,2,3]))
+#     stds.append(batch['anchor'].std(dim=[0,2,3]))
+#     stds.append(batch['positive'].std(dim=[0,2,3]))
 
 #%%
 hcs_encoder_config = {
@@ -135,14 +135,16 @@ def main(*args, **kwargs):
     trainer = L.Trainer(
         max_epochs = 100, accelerator = "gpu", precision = "32", logger=logger,
         callbacks=[
-            ModelCheckpoint(save_last=True,save_top_k=8,monitor='loss/val',every_n_epochs=1)
+            ModelCheckpoint(
+                save_last=True, save_top_k=8, monitor='loss/val', every_n_epochs=1
+            )
         ]
     )
 
     trainer.fit(
-    model = hcs_contrastive,
-    train_dataloaders = data_module.train_dataloader(),
-    val_dataloaders = data_module.val_dataloader()
+        model = hcs_contrastive,
+        train_dataloaders = data_module.train_dataloader(),
+        val_dataloaders = data_module.val_dataloader()
     )
     
 #%%

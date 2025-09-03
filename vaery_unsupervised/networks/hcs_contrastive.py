@@ -200,14 +200,14 @@ class ContrastiveModule(LightningModule):
         batch: ContrastiveSample, batch_idx: int
     ) -> Tensor:
         anchor, positive = batch["anchor"], batch["positive"]
-        _, anchor_proj = self(anchor)
-        _,positive_proj = self(positive)
+        anchor_emb, anchor_proj = self(anchor)
+        positive_emb, positive_proj = self(positive)
         
         #Compute the loss with the projections pairs
         loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
-        self._log_metrics(loss, anchor, positive, "val")
+        self._log_metrics(loss, anchor_emb, positive_emb, "val")
 
         ##adding 
         # self.log("val/loss", loss.item(), on_epoch=True, prog_bar=True)

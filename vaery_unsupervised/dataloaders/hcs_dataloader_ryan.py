@@ -160,8 +160,12 @@ class HCSDataModule(pl.LightningDataModule):
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = [],
             anchor_augmentations= [],
-            positive_augmentations= [],
+            positive_augmentations= Compose([
+                RandRotate(range_x=30, prob=1.0, keep_size=True, mode="bilinear", padding_mode="zeros"),
+                CenterSpatialCrop(roi_size=self.crop_size)
+                ]),
             weight_channel_name= self.weight_channel_name,
+            
         )
         
     def train_dataloader(self):
