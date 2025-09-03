@@ -67,7 +67,7 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "linear_VAE_tmuxtraining2"
+model_name = "linear_VAE_fixedfinallinear_attempt3"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
