@@ -26,28 +26,28 @@ STD_OVER_DATASET = 11
 
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_compact.pkl'
+METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
 
-transforms = Compose([
-    NormalizeIntensity(
-        subtrahend=MEAN_OVER_DATASET,
-        divisor=STD_OVER_DATASET,
-        nonzero=False,
-        channel_wise=False,
-        dtype = np.float32,
-    )
-])
+# transforms = Compose([
+#     NormalizeIntensity(
+#         subtrahend=MEAN_OVER_DATASET,
+#         divisor=STD_OVER_DATASET,
+#         nonzero=False,
+#         channel_wise=False,
+#         dtype = np.float32,
+#     )
+# ])
 
 def main(*args, **kwargs):
 
     marlin_encoder_config = {
-    "backbone": "resnet34",
+    "backbone": "resnet18",
     "in_channels": 1,
-    "spatial_dims": 3,
+    "spatial_dims": 2,
     "embedding_dim": 512,
     "mlp_hidden_dims": 768,
     "projection_dim": 128,
-    "pretrained": True,
+    "pretrained": False,
     }
 
     marlin_encoder = ResNetEncoder(**marlin_encoder_config)
@@ -64,13 +64,13 @@ def main(*args, **kwargs):
         data_path=HEADPATH/'Ecoli_lDE20_Exps-0-1/',
         metadata_path=METADATA_COMPACT_PATH,
         split_ratio=0.8,
-        batch_size=32,
+        batch_size=256,
         num_workers=4,
         prefetch_factor=2,
-        transforms=transforms
+        transforms=None,#transforms
     )
     data_module._prepare_data()
-    data_module.setup(stage='train')
+    data_module.setup(stage='fit')
     
     logger = TensorBoardLogger(
         save_dir=HEADPATH/"tb_logs",
@@ -85,6 +85,7 @@ def main(*args, **kwargs):
         max_epochs=100,
         fast_dev_run=False,
         logger=logger,
+        log_every_n_steps=5,
         callbacks=[
             ModelCheckpoint(
                 monitor="loss/val",
@@ -92,12 +93,12 @@ def main(*args, **kwargs):
                 every_n_epochs=1,
                 save_last=True
             )
-        ]
+        ],
     )
 
     trainer.fit(
         model = marlin_contrastive,
-        train_dataloaders = data_module.train_dataloader()
+        datamodule = data_module
     )
 
 # Run main
