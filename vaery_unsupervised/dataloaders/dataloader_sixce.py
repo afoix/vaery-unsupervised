@@ -50,7 +50,7 @@ class SixceDataModule(LightningModule):
                  zarr_attributes=None,
                  transcripts_df=None,
                  cell_metadata_df=None,
-                 cell_boundary_df=None,
+                 cell_boundaries_df=None,
                  input_dim=200,
                  n_genes=140,
                  existing_dataset=None,
@@ -83,7 +83,7 @@ class SixceDataModule(LightningModule):
         self.zarr_attributes = zarr_attributes
         self.transcripts_df = transcripts_df
         self.cell_metadata_df = cell_metadata_df
-        self.cell_boundary_df = cell_boundary_df
+        self.cell_boundaries_df = cell_boundaries_df
         self.input_dim = input_dim
         self.n_genes = n_genes
         self.existing_dataset = existing_dataset
@@ -120,7 +120,7 @@ class SixceDataModule(LightningModule):
             zarr_attributes=self.zarr_attributes,
             transcripts_df=self.transcripts_df,
             cell_metadata_df=self.cell_metadata_df,
-            cell_boundary_df=self.cell_boundary_df,
+            cell_boundaries_df=self.cell_boundaries_df,
             input_dim=self.input_dim,
             n_genes=self.n_genes,
             selected_stains=self.selected_stains,
@@ -182,7 +182,7 @@ class SpotStainDataset(Dataset):
                  zarr_attributes,
                  transcripts_df,
                  cell_metadata_df,
-                 cell_boundary_df,
+                 cell_boundaries_df,
                  input_dim,
                  n_genes,
                  selected_stains=None,
@@ -316,7 +316,7 @@ class SpotStainDataset(Dataset):
                 input_dim,
                 zarr_attributes),
             "cell_metadata_subset_df": cell_metadata_df[cell_metadata_df["EntityID"].isin(cell_index_sublist)],
-            "cell_boundary_subset_df": cell_boundary_df[cell_boundary_df["EntityID"].isin(cell_index_sublist)],
+            "cell_boundaries_subset_df": cell_boundaries_df[cell_boundaries_df["EntityID"].isin(cell_index_sublist)],
             "n_genes": n_genes,
             "input_dim": input_dim,
             "selected_stains": selected_stains,
@@ -462,7 +462,8 @@ class SpotStainDataset(Dataset):
 
         sample = {
             "anchor": model_input_tensor,
-            "positive": model_input_tensor_augmented
+            "positive": model_input_tensor_augmented,
+            "cell_id": cell_index
         }
 
         return sample
@@ -525,7 +526,7 @@ def build_cell_tensor_components(
         cell_indices,
         detected_transcripts_subset_df,
         cell_metadata_subset_df,
-        cell_boundary_subset_df,
+        cell_boundaries_subset_df,
         n_genes,
         input_dim,
         selected_stains,
@@ -553,7 +554,7 @@ def build_cell_tensor_components(
         stain_crop_dict, x_min, y_min = get_cell_crop(
             cell_index=cell_idx,
             cell_metadata_subset_df=cell_metadata_subset_df,
-            cell_boundary_subset_df=cell_boundary_subset_df,
+            cell_boundaries_subset_df=cell_boundaries_subset_df,
             zarr_array=zarr_array,
             zarr_attributes=zarr_attributes,
             selected_stains=selected_stains,
@@ -729,11 +730,11 @@ def psf_total_intensity(kernel_size: int,
     return float(kernel.sum())
 
 
-def get_cell_crop(cell_index, cell_metadata_subset_df, cell_boundary_subset_df, zarr_array, zarr_attributes,
+def get_cell_crop(cell_index, cell_metadata_subset_df, cell_boundaries_subset_df, zarr_array, zarr_attributes,
                   selected_stains, crop_size, return_stains=False, n_masks=1):
     # Isolating to current cell
     current_cell_metadata = cell_metadata_subset_df[cell_metadata_subset_df["EntityID"] == cell_index].iloc[0]
-    current_cell_boundary_row = cell_boundary_subset_df[cell_boundary_subset_df["EntityID"] == cell_index].iloc[0]
+    current_cell_boundaries_row = cell_boundaries_subset_df[cell_boundaries_subset_df["EntityID"] == cell_index].iloc[0]
 
     # Fetch OME-Zarr shape and scaling metadata
     _, img_h, img_w = zarr_array.shape
@@ -744,7 +745,7 @@ def get_cell_crop(cell_index, cell_metadata_subset_df, cell_boundary_subset_df, 
     _, trans_um_y, trans_um_x = translation_vec
 
     # Get cell boundaries in WKB geometry, decode, and convert to pixels
-    wkb_geom = current_cell_boundary_row["Geometry"]
+    wkb_geom = current_cell_boundaries_row["Geometry"]
     geom = wkb.loads(wkb_geom)
     boundary_coords = get_all_exterior_coords(geom)
     boundary_coords_px = [
