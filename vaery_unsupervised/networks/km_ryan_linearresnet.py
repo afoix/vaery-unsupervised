@@ -79,12 +79,11 @@ class ResNet18Enc(nn.Module):
         # print(x.shape)
         x = self.layer4(x)
         # print(x.shape)
-        x = torch.relu(self.final_conv(x)) #is this true? Why aren't we doing relus earlier
+        x = torch.relu(self.final_conv(x)) #relus are already in forward loop of make layer
         # print("befor_flattening",x.shape)
         b,c,h,w = x.shape
         x = x.view(b,c*h*w)
         # print(x.shape)
-        
         x = torch.tanh(self.final_linear(x))
         # print(x.shape)
         mu, logvar = torch.chunk(x, 2, dim=1)

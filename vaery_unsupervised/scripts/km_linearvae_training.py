@@ -68,11 +68,11 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "linear_VAE_fixedfinallinear_attempt3"
+model_name = "linear_VAE_fixedfinallinear_attempt4"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
-spatialmodel = SpatialVAE_Linear(n_chan=2,latent_size=128, lr = 0.0001, beta = 1e-10, latentspace_dir = latentspace_path, channels_selection = [2,3])
+spatialmodel = SpatialVAE_Linear(n_chan=2,latent_size=128, lr = 0.0001, beta = 1e-15, latentspace_dir = latentspace_path, channels_selection = [2,3])
 
 
 #%%
@@ -85,7 +85,7 @@ logger = TensorBoardLogger(save_dir=logging_path, name = model_name)
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(
-        max_epochs = 300, 
+        max_epochs = 600, 
         accelerator = "gpu", 
        # precision = "16-mixed", 
         logger=logger,
