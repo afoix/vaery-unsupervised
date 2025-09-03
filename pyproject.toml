@@ -33,15 +33,10 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-
-visual = ["napari", "jupyter", "jupytext", "transformers>=4.51.3"]
-kati = ["spatialdata","rasterio",]
-hdf5 = ["h5py", "pyarrow"]
+visual = ["napari", "jupyter", "jupytext", "transformers>=4.51.3","plotly","dash","torchview"]
 marlin = ["vaery-unsupervised[visual]", "h5py", "pyarrow", "torchview"]
-dev = [
-"vaery-unsupervised[visual]",
-]
-
+kati = ["spatialdata","rasterio","vaery-unsupervised[visual]"]
+dev = ["vaery-unsupervised[visual]"]
 
 [project.scripts]
 vaery-unsupervised = "vaery_unsupervised.cli:main"
