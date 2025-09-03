@@ -53,7 +53,7 @@ val_loader = data_module.val_dataloader()
 
 #%%
 
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_22/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_23/checkpoints/last.ckpt"
 
 hcs_encoder_config = {
     "backbone": "resnet18",
@@ -76,16 +76,70 @@ model = model.cuda()
 model.eval()
 
 #%%
-all_emb, all_proj, all_positions = [], [], []
+# all_emb, all_proj, all_pos_info = [], [], []
+# with torch.no_grad():
+#     for batch in val_loader:
+#         emb, proj = model.encoder(batch["anchor"].cuda())
+#         all_emb.append(emb.cpu())
+#         all_proj.append(proj.cpu())
+#         all_pos_info.extend(batch["position"])
+
+# all_emb = torch.cat(all_emb, dim=0).numpy()
+# all_proj = torch.cat(all_proj, dim=0).numpy()
+
+
+
+all_emb, all_proj, all_pos_info = [], [], []
+
 with torch.no_grad():
     for batch in val_loader:
         emb, proj = model.encoder(batch["anchor"].cuda())
         all_emb.append(emb.cpu())
         all_proj.append(proj.cpu())
-        all_positions.extend(batch["position"])
+        all_pos_info.extend(batch["pos_info"])  # <-- collect position info here
 
+# concatenate tensors into numpy arrays
 all_emb = torch.cat(all_emb, dim=0).numpy()
 all_proj = torch.cat(all_proj, dim=0).numpy()
+#%%
+import pandas as pd
+
+# Make DataFrame from all_proj
+proj_df = pd.DataFrame(all_proj, columns=[f"proj_{i}" for i in range(all_proj.shape[1])])
+
+# Make DataFrame for pos info
+pos_df = pd.DataFrame(all_pos_info, columns=["pos_info"])
+pos_df[["row", "col", "field"]] = pos_df["pos_info"].str.split("/", expand=True)
+
+# Combine projections and position info into one table
+full_df = pd.concat([proj_df, pos_df], axis=1)
+
+# Optional: convert row/col/field to integers
+full_df["row"] = full_df["row"].astype(int)
+full_df["col"] = full_df["col"].astype(int)
+full_df["field"] = full_df["field"].astype(int)
+
+full_df.head()
+
+
+#%%
+annotations_path= '/mnt/efs/aimbl_2025/student_data/S-RM'
+
+# Load annotation CSV
+annotations = pd.read_csv(f"{annotations_path}/annotations.csv")
+annotations = annotations.rename(columns={'row_num': 'row', 'column': 'col'})
+#%%
+# Ensure one row per well
+annotations = annotations.drop_duplicates(subset=['row', 'col'])
+
+# Merge 'gene' into full_df
+full_df = full_df.merge(annotations['gene'], on=['row', 'col'], how='left')
+
+# Check
+print(full_df.head())
+print(full_df.groupby(['row', 'col'])['gene'].nunique())  # should be 1 per well
+
+
 
 #%%
 
@@ -106,9 +160,9 @@ plt.figure(figsize=(10, 8))
 scatter = plt.scatter(proj_2d[:, 0], proj_2d[:, 1], 
                       c=colors, cmap="tab20", alpha=0.6)
 
-# Add legend with position IDs
-handles, _ = scatter.legend_elements(num=len(unique_positions))
-plt.legend(handles, unique_positions, title="Positions", bbox_to_anchor=(1.05, 1), loc="upper left")
+# # Add legend with position IDs
+# handles, _ = scatter.legend_elements(num=len(unique_positions))
+# plt.legend(handles, unique_positions, title="Positions", bbox_to_anchor=(1.05, 1), loc="upper left")
 
 plt.xlabel("PC1")
 plt.ylabel("PC2")
@@ -127,6 +181,47 @@ plt.show()
 # plt.ylabel("PC2")
 # plt.title("PCA of Contrastive Projections")
 # plt.show()
+#%%
+import umap.umap_ as umap
+import matplotlib.pyplot as plt
+
+# Run UMAP on projections
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d_umap = umap_model.fit_transform(all_proj)
+
+# Map Position -> Well+Index label
+pos_labels = []
+for pos in all_positions:
+    try:
+        well = pos.parent  # should be the Well object
+        label = f"{well.name}_P{pos.index}"  # e.g. A01_P0
+    except AttributeError:
+        label = str(pos)
+    pos_labels.append(label)
+
+# Assign colors
+unique_labels = sorted(set(pos_labels))
+label_to_idx = {lab: i for i, lab in enumerate(unique_labels)}
+colors = [label_to_idx[lab] for lab in pos_labels]
+
+# Plot UMAP scatter
+plt.figure(figsize=(12, 10))
+scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+                      c=colors, cmap="tab20", alpha=0.6)
+
+# # Legend
+# handles, _ = scatter.legend_elements(num=len(unique_labels))
+# plt.legend(handles, unique_labels, title="Well_Position",
+#            bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
+
+plt.xlabel("UMAP-1")
+plt.ylabel("UMAP-2")
+plt.title("UMAP of Contrastive Projections by Well and Position")
+plt.tight_layout()
+plt.show()
+
+
+
 
 #%%
 main()
@@ -134,19 +229,23 @@ main()
 
 #%%
 
-
+import zarr
 import json
 from pathlib import Path
 
-# path to your dataset
+# Path to the dataset
 zarr_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_ome.zarr")
 
-# open the .zattrs file at the root
-zattrs_file = zarr_path / ".zattrs"
-with open(zattrs_file, "r") as f:
-    zattrs = json.load(f)
+# open as a zarr group
+root = zarr.open_group(str(zarr_path), mode="r")
 
-print(json.dumps(zattrs, indent=2))
+# access attributes (.zattrs)
+attrs = root.attrs.asdict()
+
+# pretty print
+print(json.dumps(attrs, indent=2))
+
+
  #%%
 
 

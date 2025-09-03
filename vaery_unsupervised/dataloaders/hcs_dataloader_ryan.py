@@ -13,7 +13,7 @@ from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedC
 
 
 class ContrastiveHCSDataset(Dataset):
-    def __init__(self, positions: list[Position], source_channel_names: list[str],weight_channel_name: str = 'nuclei', crop_size: tuple[int, int]=(256, 256), 
+    def __init__(self, positions: list[Position], pos_infos: list[str], source_channel_names: list[str],weight_channel_name: str = 'nuclei', crop_size: tuple[int, int]=(256, 256), 
                  crops_per_position: int=4, normalization_transform: Compose| list[Callable]=[], anchor_augmentations: Callable| Compose=[], positive_augmentations: Compose| Callable=[]):
         """
         Parameters:
@@ -26,6 +26,7 @@ class ContrastiveHCSDataset(Dataset):
             positive_augmentations: MONAI transform for positive augmentations (optional)
         """
         self.positions = positions
+        self.pos_infos = pos_infos
         self.source_channel_names = source_channel_names
         self.weight_channel_name = weight_channel_name
         self.crop_size = crop_size
@@ -42,12 +43,14 @@ class ContrastiveHCSDataset(Dataset):
         # make mapping between the crop_per_position and the actual index in the dataset
         # repeat the number of positions by the number of crops per position
         self.all_positions = [pos for pos in positions for _ in range(self.crops_per_position)]
+        self.all_pos_infos = [info for info in pos_infos for _ in range(self.crops_per_position)]
 
     def __getitem__(self, index):
 
         #TODO open the 
         # List of iohub Position objects
         position = self.all_positions[index]
+        pos_info = self.all_pos_infos[index]
         channel_names = position.channel_names
         source_channel_indices = [position.channel_names.index(ch) for ch in self.source_channel_names]
         # mapping of the weighted_channel_index to the source_channel_indices
@@ -93,7 +96,7 @@ class ContrastiveHCSDataset(Dataset):
             # "positive": positive[0],
             "anchor": anchor,
             "positive": positive,
-            "position": str(position),
+            "pos_info": pos_info,
             # "fov_id": position.name #TODO check if we need the fov_id
         }
     
@@ -133,9 +136,12 @@ class HCSDataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         # TODO:
         plate = open_ome_zarr(self.ome_zarr_path, mode="r")
-        positions = [pos for _, pos in plate.positions()]
+        pos_list = [(pos_info, pos) for pos_info, pos in plate.positions()]
+        positions = [pos for pos_info, pos in pos_list]
+        pos_infos = [pos_info for pos_info, pos in pos_list]
         shuffled_indices = self._set_fit_global_state(len(positions))
         positions = list(positions[i] for i in shuffled_indices)
+        pos_infos = list(pos_infos[i] for i in shuffled_indices)
         
         num_train_fovs = int(len(positions) * self.split_ratio)
 
@@ -143,7 +149,8 @@ class HCSDataModule(pl.LightningDataModule):
         #TODO ContrastiveHCSDataset extra arguments that are needed
         #TODO check that we need how many crops per positions
         self.train_dataset = ContrastiveHCSDataset(
-            positions= positions[:num_train_fovs],
+            positions=positions[:num_train_fovs],
+            pos_infos=pos_infos[:num_train_fovs],
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = self.normalization_transform,
@@ -157,6 +164,7 @@ class HCSDataModule(pl.LightningDataModule):
         )
         self.val_dataset = ContrastiveHCSDataset(
             positions = positions[num_train_fovs:],
+            pos_infos= pos_infos[num_train_fovs:],
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = [],
