@@ -8,6 +8,7 @@ from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
     SpatProtoZarrDataModule,
 )
 from vaery_unsupervised.networks.LightningVAE_linear_km import SpatialVAE_Linear
+from vaery_unsupervised.networks.km_ryan_linearresnet import (ResNet18Dec, ResNet18Enc)
 import yaml
 from vaery_unsupervised.km_utils import plot_batch_sample,plot_dataloader_output
 import monai.transforms as transforms
@@ -49,13 +50,16 @@ for batch in loader:
 #%%
 
 #%%
-checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_fixedfinallinear_attempt2/version_0/checkpoints/epoch=4-step=215.ckpt"
-model = SpatialVAE_Linear.load_from_checkpoint(checkpoint_path=checkpoint_path)
+checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_fixedfinallinear_attempt3/version_0/checkpoints/epoch=9-step=430.ckpt"
+model = SpatialVAE_Linear.load_from_checkpoint(checkpoint_path=checkpoint_path, strict = True)
+
+#%% Compact model loading with error handling
+
 #%%
 import torch
 
 #%%
-from vaery_unsupervised.networks.LitVAE_km import reparameterize
+from vaery_unsupervised.networks.LightningVAE_linear_km import reparameterize
 
 # %%
 for batch in loader:
@@ -85,7 +89,7 @@ model.eval()
 for batch in loader:
     image_ids = batch["metadata"]['well_id']
     input = batch["input"][:,model.channels_selection,:,:].to(device = model.device)
-    reconstruction, z_mean, z_log_var = model(input[:,model.channels_selection,:,:])
+    reconstruction, z_mean, z_log_var = model(input)  
     z = reparameterize(z_mean, z_log_var)
 
     all_image_ids.append(image_ids) 
