@@ -49,23 +49,10 @@ for batch in loader:
 #%%
 
 #%%
-checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_tmuxtraining2/version_0/checkpoints/epoch=145-step=6278.ckpt"
+checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_fixedfinallinear_attempt2/version_0/checkpoints/epoch=4-step=215.ckpt"
 model = SpatialVAE_Linear.load_from_checkpoint(checkpoint_path=checkpoint_path)
 #%%
 import torch
-
-
-# Compare with current model
-checkpoint = torch.load(checkpoint_path, map_location='cpu')
-print("Keys in checkpoint state_dict:")
-for key in checkpoint['state_dict'].keys():
-    print(key)
-
-#%%
-model = SpatialVAE_Linear()  # Initialize with same params as training
-print("\nKeys in current model:")
-for name, param in model.named_parameters():
-    print(name)
 
 #%%
 from vaery_unsupervised.networks.LitVAE_km import reparameterize

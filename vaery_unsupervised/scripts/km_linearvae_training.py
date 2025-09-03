@@ -10,6 +10,7 @@ from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
 from vaery_unsupervised.km_utils import plot_batch_sample,plot_dataloader_output
 import monai.transforms as transforms
 from vaery_unsupervised.networks.LightningVAE_linear_km import SpatialVAE_Linear
+from vaery_unsupervised.networks.km_ryan_linearresnet import ResNet18Enc, ResNet18Dec
 import lightning
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import Callback
