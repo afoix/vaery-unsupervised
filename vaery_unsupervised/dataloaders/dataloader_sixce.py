@@ -33,11 +33,11 @@ import dask.array as da
 from monai.transforms import (NormalizeIntensity, ScaleIntensityRange, Compose, RandGaussianSmooth, RandGaussianNoise,
                               OneOf, Rotate90, RandFlip)
 
-from pytorch_lightning import LightningModule
+from pytorch_lightning import LightningDataModule
 
 
 
-class SixceDataModule(LightningModule):
+class SixceDataModule(LightningDataModule):
     def __init__(self,
                  data_path: str,
                  dataset_export_path: str,
@@ -125,6 +125,7 @@ class SixceDataModule(LightningModule):
             n_genes=self.n_genes,
             selected_stains=self.selected_stains,
             n_masks=self.n_masks,
+            n_workers=self.n_workers,
             padding=self.padding,
             apply_data_augmentation=self.apply_data_augmentation,
             tensor_type=self.tensor_type,
@@ -335,6 +336,9 @@ class SpotStainDataset(Dataset):
 
         with Pool(processes=n_workers) as pool:
             results = pool.map(unpack_and_run_build_cell_tensor_components, args)
+
+        # with Pool(processes=n_workers) as pool:
+        #     results = pool.map(graceful_unpack_and_run_build_cell_tensor_components, args)
 
         del zarr_array  # delete the ome-zarr array so the live handle is not stored in self
 
@@ -610,6 +614,13 @@ def build_cell_tensor_components(
 def unpack_and_run_build_cell_tensor_components(d):
     return build_cell_tensor_components(**d)
 
+def graceful_unpack_and_run_build_cell_tensor_components(args):
+    try:
+        print(f"Worker processing {len(args['cell_indices'])} cells", flush=True)
+        return build_cell_tensor_components(**args)
+    except Exception as e:
+        print(f"Worker failed: {e}", flush=True)
+        raise
 
 def get_all_exterior_coords(geom):
     '''
