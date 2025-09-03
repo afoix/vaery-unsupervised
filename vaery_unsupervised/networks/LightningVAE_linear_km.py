@@ -51,8 +51,8 @@ class SpatialVAE_Linear(LightningModule):
 
     if batch_idx == 0:
         tensorboard = self.logger.experiment
-        tensorboard.add_image("train/target", target[0])
-        tensorboard.add_image("train/reconstruction", x_hat[0])
+        tensorboard.add_image("train/target", target[0], self.current_epoch)
+        tensorboard.add_image("train/reconstruction", x_hat[0], self.current_epoch)
     return loss 
 
   def validation_step(self, batch, batch_idx):
@@ -73,8 +73,8 @@ class SpatialVAE_Linear(LightningModule):
         print(f"Saved validation latent codes for epoch {epoch} from batch {batch_idx}")
 
         tensorboard = self.logger.experiment
-        tensorboard.add_image("val/target", target[0].detach().cpu().numpy())
-        tensorboard.add_image("val/reconstruction", x_hat[0].detach().cpu().numpy())
+        tensorboard.add_image("val/target", target[0].detach().cpu().numpy(), self.current_epoch)
+        tensorboard.add_image("val/reconstruction", x_hat[0].detach().cpu().numpy(), self.current_epoch)
 
     
 
