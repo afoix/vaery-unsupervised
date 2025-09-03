@@ -36,7 +36,7 @@ class BasicBlockEnc(nn.Module):
 
 class ResNet18Enc(nn.Module):
 
-    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3): #z_dims will go to 1, nc = 3, 
+    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, input_shape =128): #z_dims will go to 1, nc = 3, 
         super().__init__()
         self.in_planes = 64 #64 og, number of kernels
         self.z_dim = z_dim 
@@ -47,7 +47,11 @@ class ResNet18Enc(nn.Module):
         self.layer3 = self._make_layer(BasicBlockEnc, 256, num_Blocks[2], stride=2)
         self.layer4 = self._make_layer(BasicBlockEnc, 512, num_Blocks[3], stride=2)
         self.final_conv = nn.Conv2d(512*2, 2 * z_dim, kernel_size=3, stride = 2,padding=1)
-        self.final_linear = None
+        self.final_shape = int(input_shape / 2**6)
+        self.final_linear = nn.Linear(
+            in_features = 2 * z_dim * self.final_shape**2,
+            out_features= 2 * z_dim
+        )
 
 
     def _make_layer(self, BasicBlockEnc, planes, num_Blocks, stride): #creates a sequential list of the BasicBlockDec
@@ -80,8 +84,6 @@ class ResNet18Enc(nn.Module):
         b,c,h,w = x.shape
         x = x.view(b,c*h*w)
         # print(x.shape)
-        if self.final_linear is None:
-            self.final_linear = nn.Linear(c*h*w, c).to(x.device)
         
         x = torch.tanh(self.final_linear(x))
         # print(x.shape)
@@ -143,6 +145,7 @@ class ResNet18Dec(nn.Module):
         self.nc = nc
         self.out_features = out_features
         self.z_dim = z_dim
+
         self.linear_outfeatures = 4*4*z_dim
         #self.linear = nn.Conv2d(z_dim, 512, kernel_size=1) #original but we want a conv
         self.linear = nn.Linear(z_dim, self.linear_outfeatures)
@@ -212,7 +215,11 @@ class LinearVAEResNet18(nn.Module):
         std = torch.exp(logvar / 2) # in log-space, squareroot is divide by two
         epsilon = torch.randn_like(std)
         return epsilon * std + mean
-
+#%%
+shape = 128
+input = torch.zeros(1,3,shape,shape)
+encoder = ResNet18Enc(input_shape=shape)
+encoder(input)[0].shape
 # #%%
 # import numpy as np
 # from pathlib import Path
@@ -312,3 +319,4 @@ class LinearVAEResNet18(nn.Module):
 #   return loss, mse, kl_loss
 # # %%
 # model_loss()
+# %%
