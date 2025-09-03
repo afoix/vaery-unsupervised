@@ -5,8 +5,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+import pytorch_lightning as pl
+import torch
+import sklearn as sk
+import umap
 
+# Color params for the PCA, UMAP, and tSNE plotting
 LIGHTGRAY = "#d3d3d3"  # for zero/absent expression
+PLAIN_COLOR = "#404040" # for when no annotating genes are provided
 
 def _expression_vector_for_gene(
     gene: str,
@@ -101,12 +107,20 @@ def plot_gene_expression_panels(
     n_cols = max(len(names_emb), len(names_proj))
     n_rows = 1 if (len(names_emb) == 0 or len(names_proj) == 0) else 2
 
-    for gene in marker_list:
-        expr = _expression_vector_for_gene(gene, cell_ids_order, transcripts_df)
+    unannotated = marker_list is None
+    if unannotated:
+        marker_list = [None] # single-pass placeholder
 
-        # Split zero vs positive; normalize only positives
-        mask_pos = expr > 0
-        expr = np.log1p(expr) # log normalize so cells with very highly expressed genes don't mess with dynamic range
+    for gene in marker_list:
+        if unannotated:
+            expr = None
+            mask_pos = np.zeros(N, dtype=bool)
+        else:
+            expr = _expression_vector_for_gene(gene, cell_ids_order, transcripts_df)
+            # Split zero vs positive; normalize only positives
+            mask_pos = expr > 0
+            expr = np.log1p(expr) # log normalize so cells with very highly expressed genes don't mess with dynamic range
+
         vmax = float(expr[mask_pos].max()) if mask_pos.any() else 1.0
         norm = Normalize(vmin=0.0, vmax=vmax)
         sm = ScalarMappable(norm=norm, cmap=cmap)
@@ -119,14 +133,17 @@ def plot_gene_expression_panels(
         elif n_cols == 1:
             axes = axes[:, np.newaxis]
 
-        fig.suptitle(f"{gene} expression", fontsize=16, fontweight="bold")
+        title = "unannotated" if unannotated else f"{gene} expression"
+        fig.suptitle(title, fontsize=16, fontweight="bold")
 
         # Embeddings row
         for j, name in enumerate(names_emb):
             ax = axes[0, j]
             coords = np.asarray(embeddings[name])
-            ax.scatter(coords[:, 0], coords[:, 1], s=point_size, c=LIGHTGRAY, alpha=alpha, linewidths=0)
-            if mask_pos.any():
+            base_color = PLAIN_COLOR if unannotated else LIGHTGRAY
+            ax.scatter(coords[:, 0], coords[:, 1], s=point_size, c=base_color, alpha=alpha, linewidths=0)
+            # Second layer (only when annotated and there are positives)
+            if (not unannotated) and mask_pos.any():
                 ax.scatter(coords[mask_pos, 0], coords[mask_pos, 1],
                            s=point_size, c=expr[mask_pos], cmap=cmap, norm=norm, alpha=alpha, linewidths=0)
             _tidy_axis(ax, f"Embeddings {name}")
@@ -136,10 +153,16 @@ def plot_gene_expression_panels(
             for j, name in enumerate(names_proj):
                 ax = axes[1, j]
                 coords = np.asarray(projections[name])
-                ax.scatter(coords[:, 0], coords[:, 1], s=point_size, c=LIGHTGRAY, alpha=alpha, linewidths=0)
-                if mask_pos.any():
+
+                # use same base color logic as embeddings
+                base_color = PLAIN_COLOR if unannotated else LIGHTGRAY
+                ax.scatter(coords[:, 0], coords[:, 1], s=point_size, c=base_color, alpha=alpha, linewidths=0)
+
+                # only overlay gradient when annotated and there are positives
+                if (not unannotated) and mask_pos.any():
                     ax.scatter(coords[mask_pos, 0], coords[mask_pos, 1],
                                s=point_size, c=expr[mask_pos], cmap=cmap, norm=norm, alpha=alpha, linewidths=0)
+
                 _tidy_axis(ax, f"Projections {name}")
 
         if include_colorbar and mask_pos.any():
@@ -149,7 +172,8 @@ def plot_gene_expression_panels(
         fig.tight_layout(rect=[0, 0, 1, 0.96])
 
         if save_dir is not None:
-            fname = f"{file_prefix}{gene}_expression.png" if file_prefix else f"{gene}_expression.png"
+            base = "unannotated" if unannotated else gene
+            fname = f"{file_prefix}{base}_expression.png" if file_prefix else f"{base}_expression.png"
             fpath = os.path.join(save_dir, fname)
             fig.savefig(fpath, dpi=dpi, bbox_inches="tight")
 
@@ -161,3 +185,88 @@ def plot_gene_expression_panels(
         out[gene] = (fig, axes)
 
     return out
+
+def run_inference(
+        saved_inference_path: str,
+        model_name: str,
+        data_module,
+        model,
+        global_seed,
+        transcript_df,
+        annotation_marker_list
+        ):
+    current_inference_path = os.path.join(saved_inference_path, model_name)
+    os.makedirs(current_inference_path, exist_ok=True)
+
+    data_module.setup(stage="predict")
+
+    # Create trainer for inference
+    trainer = pl.Trainer(
+        accelerator="gpu",
+        num_nodes=1,
+        precision="16-mixed",
+        strategy="auto",
+        max_epochs=1,
+        logger=False,
+        devices=1,
+    )
+
+    # Run prediction
+    print("Running inference...")
+    predictions = trainer.predict(model, datamodule=data_module)
+
+    # Extract both embeddings and projections
+    embeddings = torch.cat([pred['embeddings'] for pred in predictions], dim=0).numpy()
+    projections = torch.cat([pred['projections'] for pred in predictions], dim=0).numpy()
+    cell_ids_order = torch.cat([pred['cell_ids'] for pred in predictions], dim=0).numpy()
+
+    # Save inference
+    np.save(os.path.join(current_inference_path, f"{model_name}_embeddings.npy"), embeddings)
+    np.save(os.path.join(current_inference_path, f"{model_name}_projections.npy"), projections)
+
+    # Run PCA, UMAP, and tSNE
+    print("Generating embeddings viz...")
+    embeddings_dict = {
+        'PCA': sk.decomposition.PCA(n_components=2, random_state=global_seed).fit_transform(embeddings),
+        'UMAP': umap.UMAP(n_components=2, random_state=global_seed).fit_transform(embeddings),
+        'tSNE': sk.manifold.TSNE(n_components=2, random_state=global_seed).fit_transform(embeddings)
+    }
+
+    projections_dict = {
+        'PCA': sk.decomposition.PCA(n_components=2, random_state=global_seed).fit_transform(projections),
+        'UMAP': umap.UMAP(n_components=2, random_state=global_seed).fit_transform(projections),
+        'tSNE': sk.manifold.TSNE(n_components=2, random_state=global_seed).fit_transform(projections)
+    }
+
+
+    # -1 generates a plot for each gene in the dataset
+    if annotation_marker_list == -1:
+        marker_list = transcript_df["gene"].unique().tolist()
+        assert not any("blank" in g.lower() for g in marker_list), \
+            "Error: some genes are 'Blank' rounds!"
+    else:
+        marker_list = annotation_marker_list
+
+    # If none, don't annotate, otherwise use the marker_list provided or all genes, depending on annotation_marker_list
+    if marker_list is None:
+        marker_expression = None
+    else:
+        marker_expression = transcript_df[transcript_df['gene'].isin(marker_list)]
+
+    # Generate and save plots
+    figs = plot_gene_expression_panels(
+        embeddings=embeddings_dict,
+        projections=projections_dict,
+        cell_ids_order=cell_ids_order,
+        marker_list=marker_list,
+        transcripts_df=marker_expression,
+        save_dir=current_inference_path,
+        file_prefix=f"{model_name}_",
+        show=False,
+        include_colorbar=False,
+        dpi=300,
+        point_size=20,
+        cmap="Reds",
+    )
+
+    return embeddings_dict, projections_dict, figs
