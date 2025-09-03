@@ -3,11 +3,10 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import torchview
 from careamics.lightning import VAEModule
-from lightning import Trainer
-from lightning.pytorch.loggers import TensorBoardLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from pytorch_lightning import Trainer
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 from monai.transforms import RandRotate, RandFlip
 
 from microsplit_reproducibility.configs.factory import (
@@ -39,7 +38,7 @@ ome_zarr_path = "/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_o
 data_module = MicroSplitHCSDataModule(
     ome_zarr_path=ome_zarr_path,
     source_channel_names=['mito', 'er', 'nuclei'],
-    crop_size=(128, 128),
+    crop_size=(64, 64),
     crops_per_position=4,
     batch_size=32,
     num_workers=0,
@@ -58,19 +57,19 @@ data_module.setup()
 # Visualize data examples
 train_loader = data_module.train_dataloader()
 batch_sample = next(iter(train_loader))
-print(batch_sample['input'].shape, batch_sample['target'].shape)
+print(batch_sample[0].shape, batch_sample[1].shape)
 
 #%%
 fig, ax = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
-ax[0, 0].imshow(batch_sample['input'].numpy()[0, 0], cmap='gray')
+ax[0, 0].imshow(batch_sample[0].numpy()[0, 0], cmap='gray')
 ax[0, 0].set_title("Mixed Image")
 ax[0, 1].set_axis_off()
 ax[0, 2].set_axis_off()
-ax[1, 0].imshow(batch_sample['target'].numpy()[0, 0], cmap='magma')
+ax[1, 0].imshow(batch_sample[1].numpy()[0, 0], cmap='magma')
 ax[1, 0].set_title("Channel 0")
-ax[1, 1].imshow(batch_sample['target'].numpy()[0, 1], cmap='magma')
+ax[1, 1].imshow(batch_sample[1].numpy()[0, 1], cmap='magma')
 ax[1, 1].set_title("Channel 1")
-ax[1, 2].imshow(batch_sample['target'].numpy()[0, 2], cmap='magma')
+ax[1, 2].imshow(batch_sample[1].numpy()[0, 2], cmap='magma')
 ax[1, 2].set_title("Channel 2")
 plt.show()
 
@@ -79,7 +78,7 @@ plt.show()
 experiment_params = SplittingParameters(
     algorithm="musplit",
     loss_type="musplit", # no denoising
-    img_size=(128, 128), # this should be consistent with the dataset
+    img_size=(64, 64), # this should be consistent with the dataset
     target_channels=len(['mito', 'er', 'nuclei']),
     multiscale_count=3,
     lr=1e-3,
@@ -122,7 +121,7 @@ model = VAEModule(algorithm_config=experiment_config)
 
 #%%
 # Setup Trainer
-logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/logs/microsplit")
+logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs")
 logging_path.mkdir(exist_ok=True)
 logger = TensorBoardLogger(
     save_dir=logging_path,
@@ -137,7 +136,7 @@ trainer = Trainer(
     gradient_clip_algorithm=training_config.gradient_clip_algorithm,
     callbacks=[
         ModelCheckpoint(
-            save_last=True, save_top_k=8, monitor='loss/val', every_n_epochs=1
+            save_last=True, save_top_k=3, monitor='loss/val', every_n_epochs=1
         )
     ]
 )
@@ -191,7 +190,10 @@ METRICS = [
 
 #%%
 # Extract gt dataset
+gt_data = []
+for batch in data_module.val_dataloader():
+    gt_data.append(batch[1].numpy())
 
 #%%
-metrics_dict = compute_metrics(gt_target, stitched_predictions, metrics=METRICS)
+metrics_dict = compute_metrics(gt_data, stitched_predictions, metrics=METRICS)
 show_metrics(metrics_dict)

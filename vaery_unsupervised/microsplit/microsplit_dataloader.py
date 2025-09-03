@@ -65,10 +65,7 @@ class MicroSplitHCSDataset(Dataset):
         mix_coeffs = torch.empty(multi_ch_img.shape[0]).uniform_(*self.mix_coeff_range)
         mixed_img = torch.mean(multi_ch_img * mix_coeffs[:, None, None], dim=0, keepdim=True)
 
-        return {
-            "input": mixed_img,
-            "target": multi_ch_img,
-        }
+        return mixed_img, multi_ch_img
     
     def __len__(self):
         return len(self.all_positions)
