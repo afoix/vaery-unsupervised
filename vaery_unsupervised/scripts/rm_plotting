@@ -76,19 +76,6 @@ model = model.cuda()
 model.eval()
 
 #%%
-# all_emb, all_proj, all_pos_info = [], [], []
-# with torch.no_grad():
-#     for batch in val_loader:
-#         emb, proj = model.encoder(batch["anchor"].cuda())
-#         all_emb.append(emb.cpu())
-#         all_proj.append(proj.cpu())
-#         all_pos_info.extend(batch["position"])
-
-# all_emb = torch.cat(all_emb, dim=0).numpy()
-# all_proj = torch.cat(all_proj, dim=0).numpy()
-
-
-
 all_emb, all_proj, all_pos_info = [], [], []
 
 with torch.no_grad():
@@ -119,30 +106,19 @@ full_df["row"] = full_df["row"].astype(int)
 full_df["col"] = full_df["col"].astype(int)
 full_df["field"] = full_df["field"].astype(int)
 
-full_df.head()
-
-
-#%%
 annotations_path= '/mnt/efs/aimbl_2025/student_data/S-RM'
 
 # Load annotation CSV
 annotations = pd.read_csv(f"{annotations_path}/annotations.csv")
 annotations = annotations.rename(columns={'row_num': 'row', 'column': 'col'})
-#%%
-# Ensure one row per well
-annotations = annotations.drop_duplicates(subset=['row', 'col'])
 
 # Merge 'gene' into full_df
-full_df = full_df.merge(annotations['gene'], on=['row', 'col'], how='left')
+full_df = full_df.merge(annotations[['gene', 'col','row']], on=['row', 'col'], how='left')
 
 # Check
-print(full_df.head())
-print(full_df.groupby(['row', 'col'])['gene'].nunique())  # should be 1 per well
-
-
+full_df.info()
 
 #%%
-
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
@@ -150,109 +126,144 @@ from sklearn.decomposition import PCA
 pca = PCA(n_components=2)
 proj_2d = pca.fit_transform(all_proj)
 
-# Map positions to integer labels for coloring
-unique_positions = list(set(all_positions))
-pos_to_idx = {pos: i for i, pos in enumerate(unique_positions)}
-colors = [pos_to_idx[p] for p in all_positions]
+# Use the gene column for coloring
+genes = full_df["gene"].astype(str)   # make sure it's string for grouping
+unique_genes = genes.unique()
+gene_to_idx = {g: i for i, g in enumerate(unique_genes)}
+colors = [gene_to_idx[g] for g in genes]
 
 # Plot
 plt.figure(figsize=(10, 8))
 scatter = plt.scatter(proj_2d[:, 0], proj_2d[:, 1], 
                       c=colors, cmap="tab20", alpha=0.6)
 
-# # Add legend with position IDs
-# handles, _ = scatter.legend_elements(num=len(unique_positions))
-# plt.legend(handles, unique_positions, title="Positions", bbox_to_anchor=(1.05, 1), loc="upper left")
+# # Legend with gene labels
+# handles, _ = scatter.legend_elements(num=len(unique_genes))
+# plt.legend(handles, unique_genes, title="Gene", bbox_to_anchor=(1.05, 1), loc="upper left")
 
 plt.xlabel("PC1")
 plt.ylabel("PC2")
-plt.title("PCA of Contrastive Projections by Position")
+plt.title("PCA of Contrastive Projections by Gene")
 plt.tight_layout()
 plt.show()
 
 
-
-# pca = PCA(n_components=2)
-# proj_2d = pca.fit_transform(all_proj)
-
-# plt.figure(figsize=(8,6))
-# plt.scatter(proj_2d[:,0], proj_2d[:,1], alpha=0.5)
-# plt.xlabel("PC1")
-# plt.ylabel("PC2")
-# plt.title("PCA of Contrastive Projections")
-# plt.show()
 #%%
 import umap.umap_ as umap
 import matplotlib.pyplot as plt
 
 # Run UMAP on projections
-umap_model = umap.UMAP(n_components=2, random_state=42)
+umap_model = umap.UMAP(n_components=2, random_state=57)
 proj_2d_umap = umap_model.fit_transform(all_proj)
 
-# Map Position -> Well+Index label
-pos_labels = []
-for pos in all_positions:
-    try:
-        well = pos.parent  # should be the Well object
-        label = f"{well.name}_P{pos.index}"  # e.g. A01_P0
-    except AttributeError:
-        label = str(pos)
-    pos_labels.append(label)
+# Get gene labels from full_df (must match index of all_proj)
+gene_labels = full_df["gene"].fillna("NA")  # fallback if missing
 
-# Assign colors
-unique_labels = sorted(set(pos_labels))
-label_to_idx = {lab: i for i, lab in enumerate(unique_labels)}
-colors = [label_to_idx[lab] for lab in pos_labels]
+# Map each gene to an integer color
+unique_genes = sorted(gene_labels.unique())
+gene_to_idx = {g: i for i, g in enumerate(unique_genes)}
+colors = gene_labels.map(gene_to_idx)
 
 # Plot UMAP scatter
 plt.figure(figsize=(12, 10))
 scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
                       c=colors, cmap="tab20", alpha=0.6)
 
-# # Legend
-# handles, _ = scatter.legend_elements(num=len(unique_labels))
-# plt.legend(handles, unique_labels, title="Well_Position",
+# # Legend with gene names
+# handles, _ = scatter.legend_elements(num=len(unique_genes))
+# plt.legend(handles, unique_genes, title="Gene",
 #            bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
 
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
-plt.title("UMAP of Contrastive Projections by Well and Position")
+plt.title("UMAP of Contrastive Projections by Gene")
 plt.tight_layout()
 plt.show()
 
-
-
-
 #%%
-main()
+#umap with only negcons
+import umap.umap_ as umap
+import matplotlib.pyplot as plt
 
+# Run UMAP on projections
+umap_model = umap.UMAP(n_components=2, random_state=57)
+proj_2d_umap = umap_model.fit_transform(all_proj)
 
-#%%
+# Gene labels
+gene_labels = full_df["gene"].fillna("NA")
 
-import zarr
-import json
-from pathlib import Path
+# Build color array: grey by default, special color for negcon
+colors = ["lightgrey"] * len(gene_labels)
+for i, g in enumerate(gene_labels):
+    if g.lower() == "negcon":
+        colors[i] = "red"   # highlight negcon in red (change if you like)
 
-# Path to the dataset
-zarr_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_ome.zarr")
+# Plot
+plt.figure(figsize=(12, 10))
+plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+            c=colors, alpha=0.6)
 
-# open as a zarr group
-root = zarr.open_group(str(zarr_path), mode="r")
-
-# access attributes (.zattrs)
-attrs = root.attrs.asdict()
-
-# pretty print
-print(json.dumps(attrs, indent=2))
-
-
+plt.xlabel("UMAP-1")
+plt.ylabel("UMAP-2")
+plt.title("UMAP of Contrastive Projections\nHighlighting negcon")
+plt.tight_layout()
+plt.show()
  #%%
 
+ #pca of negcons only
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
+# Run PCA
+pca = PCA(n_components=2)
+proj_2d = pca.fit_transform(all_proj)
 
+# Gene labels
+gene_labels = full_df["gene"].fillna("NA")
 
+# Build colors: grey by default, highlight negcon
+colors = ["lightgrey"] * len(gene_labels)
+for i, g in enumerate(gene_labels):
+    if g.lower() == "negcon":
+        colors[i] = "red"   # negcon points in red
 
+# Plot
+plt.figure(figsize=(10, 8))
+plt.scatter(proj_2d[:, 0], proj_2d[:, 1],
+            c=colors, alpha=0.6)
 
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("PCA of Contrastive Projections\nHighlighting negcon")
+plt.tight_layout()
+plt.show()
+#%%
+##by row
+import umap.umap_ as umap
+import matplotlib.pyplot as plt
+
+# Run UMAP
+umap_model = umap.UMAP(n_components=2, random_state=57)
+proj_2d_umap = umap_model.fit_transform(all_proj)
+
+# Use the row column for coloring
+rows = full_df["row"]
+
+plt.figure(figsize=(12, 10))
+scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+                      c=rows, cmap="tab20", alpha=0.7)
+
+# Add colorbar to show row values
+cbar = plt.colorbar(scatter)
+cbar.set_label("Row")
+
+plt.xlabel("UMAP-1")
+plt.ylabel("UMAP-2")
+plt.title("UMAP of Contrastive Projections colored by Row")
+plt.tight_layout()
+plt.show()
+
+#%%
 
 
 
