@@ -175,7 +175,7 @@ class ResNet18Dec(nn.Module):
         self.in_features = features
         return nn.Sequential(*layers)
 
-    def forward(self, z, final_activation="tanh"):
+    def forward(self, z, final_dec_activation="tanh"):
 
         #in_mat_sz = int(64/self.matrix_size)
 
@@ -194,7 +194,7 @@ class ResNet18Dec(nn.Module):
         x = self.layer3(x)
         x = self.layer2(x)
         x = self.layer1(x)
-        if final_activation == "tanh":
+        if final_dec_activation == "tanh":
             x = torch.tanh(self.conv1(x))
 
         return x

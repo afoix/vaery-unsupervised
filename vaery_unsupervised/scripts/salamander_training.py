@@ -38,6 +38,7 @@ def main():
         latent_size=1024,
         n_chan=batch_shape[1],
         z_dir=f"/home/jnc2161/mbl/{model_name}_latent",
+        final_dec_activation=""
     )
 
     logger_tb = TensorBoardLogger(save_dir="/home/jnc2161/mbl/logs", name=model_name)
