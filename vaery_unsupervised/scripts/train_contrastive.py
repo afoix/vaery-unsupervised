@@ -84,8 +84,8 @@ hcs_encoder_config = {
     "in_channels": 3,
     "spatial_dims": 2,
     "embedding_dim": 512,
-    "mlp_hidden_dims": 768,
-    "projection_dim": 128,
+    "mlp_hidden_dims": 256,#256 originally 768
+    "projection_dim": 64,#64 originally 128
     "pretrained": False,
 }
 
@@ -102,7 +102,7 @@ hcs_contrastive = ContrastiveModule(**hcs_contrastive_config)
 
 model_graph = torchview.draw_graph(
     hcs_contrastive,
-    input_size=(32, 3, 360, 360),
+    input_size=(32, 3, 128, 128),
 )
 
 model_graph.visual_graph

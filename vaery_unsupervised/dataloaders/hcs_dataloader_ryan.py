@@ -98,11 +98,9 @@ class ContrastiveHCSDataset(Dataset):
         if torch.isnan(norm_img).any():
             norm_img = torch.nan_to_num(norm_img, nan=0.0, posinf=1.0, neginf=0.0)
 
+        positive = self.positive_augmentations(norm_img)
         anchor = self.anchor_augmentations(norm_img)
-        positive = self.positive_augmentations(anchor)
-
-
-
+       
         #TODO return the anchor and positive
         return {
             "anchor": anchor,
@@ -165,27 +163,27 @@ class HCSDataModule(pl.LightningDataModule):
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = self.normalization_transform,
-            anchor_augmentations= [],
+            anchor_augmentations= Compose([CenterSpatialCrop(roi_size=self.crop_size)]),
             weight_channel_name= self.weight_channel_name,
             positive_augmentations= Compose([
                 RandRotate(
-                    range_x=30,
+                    range_x=np.pi,# update full rotation
                     prob=0.8,
                     keep_size=True,
                     mode="bilinear",
                     padding_mode="zeros"),
                 CenterSpatialCrop(
                     roi_size=self.crop_size),
-                RandAffine(
-                    scale_range =[0.0, 0.05,0.05],
-                    shear_range = [0.0,0.005,0.005],
-                    prob = 0.8),
+                # RandAffine(
+                #     scale_range =[0.0, 0.05,0.05],
+                #     shear_range = [0.0,0.005,0.005],
+                #     prob = 0.8),
+                RandScaleIntensity(factors = 0.5, prob=0.5),
                 RandGaussianNoise(
                     mean =0.0,
                     std=0.05,
                     prob=0.8),
                 RandAdjustContrast(gamma = (0.9,1.1),prob=0.5),
-                RandScaleIntensity(factors = 0.5, prob=0.5),
             ])
         )
         self.val_dataset = ContrastiveHCSDataset(
@@ -194,26 +192,26 @@ class HCSDataModule(pl.LightningDataModule):
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = [],
-            anchor_augmentations= [],
+            anchor_augmentations= Compose([CenterSpatialCrop(roi_size=self.crop_size)]),
             positive_augmentations= Compose([
                 RandRotate(
-                    range_x=30,
+                    range_x=np.pi,
                     prob=0.8,
                     keep_size=True,
                     mode="bilinear",
                     padding_mode="zeros"),
                 CenterSpatialCrop(
                     roi_size=self.crop_size),
-                RandAffine(
-                    scale_range =[0.0, 0.3,0.3],
-                    shear_range = [0.0,0.01,0.01],
-                    prob = 0.8),
+                # RandAffine(
+                #     scale_range =[0.0, 0.3,0.3],
+                #     shear_range = [0.0,0.01,0.01],
+                #     prob = 0.8),
+                RandScaleIntensity(factors = 0.5, prob=0.5),
                 RandGaussianNoise(
                     mean =0.0,
                     std=0.05,
                     prob=0.8),
                 RandAdjustContrast(gamma = (0.9,1.1),prob=0.5),
-                RandScaleIntensity(factors = 0.5, prob=0.5),
             ]),
             weight_channel_name= self.weight_channel_name,
             
