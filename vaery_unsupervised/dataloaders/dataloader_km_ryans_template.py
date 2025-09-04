@@ -407,6 +407,7 @@ class SpatProteoDatasetZarr(Dataset):
             dataset_name = "crop_128_px", # what your dataset in the zarr file is called
             masking_function = None, # calling it with no masking function will return the basic mask (direct cutout of polygon)
             dataset_normalisation_dict = None,
+            per_image_norm = False,
             transform_input: list|None=None, 
             transform_both: list|None=None,
             train_val_split =0.8,
@@ -427,6 +428,7 @@ class SpatProteoDatasetZarr(Dataset):
         self.crop_size = crop_size
         self.masking_function = masking_function
         self.dataset_normalisation_dict = dataset_normalisation_dict
+        self.per_image_norm = per_image_norm
         # setting transform and train/val split
         self.transform_both = transform_both
         self.transform_input = transform_input
@@ -468,7 +470,11 @@ class SpatProteoDatasetZarr(Dataset):
         }
         
         start = time.process_time()
-        if self.dataset_normalisation_dict:
+        if self.per_image_norm:
+            image = (
+                image - np.mean(image,axis = (1,2))[:,np.newaxis,np.newaxis]
+            ) / np.std(image,axis=(1,2))[:,np.newaxis,np.newaxis]
+        elif self.dataset_normalisation_dict:
             mean, stddev = self.dataset_normalisation_dict[metadata['dataset']]
             image = (
                 image - np.array(mean)[:,np.newaxis,np.newaxis]
@@ -513,6 +519,7 @@ class SpatProtoZarrDataModule(LightningDataModule):
             num_workers:int,
             crop_size = 128,
             dataset_normalisation_dict = None,
+            per_image_norm = False,
             transform_both: list|None=None,
             transform_input: list|None=None,
             prefetch_factor:int=2,
@@ -526,6 +533,7 @@ class SpatProtoZarrDataModule(LightningDataModule):
         # setting masking function and transform
         self.crop_size = crop_size
         self.dataset_normalisation_dict = dataset_normalisation_dict
+        self.per_image_norm = per_image_norm
         self.masking_function = masking_function
         self.transform_input = transform_input
         self.transform_both = transform_both
@@ -552,6 +560,7 @@ class SpatProtoZarrDataModule(LightningDataModule):
                 zarr_path=self.zarr_path,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm= self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=self.transform_input,
                 transform_both = self.transform_both,
@@ -565,6 +574,7 @@ class SpatProtoZarrDataModule(LightningDataModule):
                 zarr_path=self.zarr_path,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm= self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=None,
                 transform_both = None,
@@ -580,6 +590,7 @@ class SpatProtoZarrDataModule(LightningDataModule):
                 zarr_path=self.zarr_path,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm= self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=None,
                 transform_both = None,
