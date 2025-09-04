@@ -47,6 +47,6 @@ sns.scatterplot(shape_df,x="TSNE1",y="TSNE2",hue="plate_idx")
 # %%
 fig, axs = plt.subplots(4,4,figsize = (12,12))
 hues = [] # choose 16 hues
-for ax, hue in zip(axs.flatten(),hues)
+for ax, hue in zip(axs.flatten(),hues):
     sns.scatterplot(shape_df,x="TSNE1",y="TSNE2",hue=hue,ax =ax)
     ax.set_title(hue)
