@@ -50,7 +50,7 @@ def _expression_vector_for_gene(
     return values
 
 
-def plot_gene_expression_panels(
+def plot_pca_umap_tsne(
     embeddings: Dict[str, np.ndarray],
     projections: Dict[str, np.ndarray],
     cell_ids_order: Iterable,
@@ -204,7 +204,7 @@ def run_inference(
     trainer = pl.Trainer(
         accelerator="gpu",
         num_nodes=1,
-        precision="16-mixed",
+        # precision="16-mixed",
         strategy="auto",
         max_epochs=1,
         logger=False,
@@ -223,6 +223,7 @@ def run_inference(
     # Save inference
     np.save(os.path.join(current_inference_path, f"{model_name}_embeddings.npy"), embeddings)
     np.save(os.path.join(current_inference_path, f"{model_name}_projections.npy"), projections)
+    np.save(os.path.join(current_inference_path, f"{model_name}_cell_ids.npy"), cell_ids_order)
 
     # Run PCA, UMAP, and tSNE
     print("Generating embeddings viz...")
@@ -254,7 +255,7 @@ def run_inference(
         marker_expression = transcript_df[transcript_df['gene'].isin(marker_list)]
 
     # Generate and save plots
-    figs = plot_gene_expression_panels(
+    figs = plot_pca_umap_tsne(
         embeddings=embeddings_dict,
         projections=projections_dict,
         cell_ids_order=cell_ids_order,
