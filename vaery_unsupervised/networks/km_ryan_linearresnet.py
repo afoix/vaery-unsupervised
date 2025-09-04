@@ -182,7 +182,7 @@ class ResNet18Dec(nn.Module):
         #self.linear = nn.Conv2d(z_dim, 512, kernel_size=1) #original but we want a conv
         self.linear = nn.Linear(z_dim, self.linear_outfeatures)
         # print('making layer 4')
-        
+        self.upsample = UpsampleConv(z_dim, self.in_planes)
         self.layer4 = self._make_layer(BasicBlockDec, 256, num_Blocks[3], stride=2) 
         # print('making layer 3')
         self.layer3 = self._make_layer(BasicBlockDec, 128, num_Blocks[2], stride=2)
@@ -211,7 +211,8 @@ class ResNet18Dec(nn.Module):
 
     def forward(self, z):
         # print(z.shape)
-        x = self.linear(z)
+        x = torch.relu(self.linear(z))
+        #could add a conv layer between linear and upsample
         # print(f'{x.shape}_linearoutputshape')
         b,c = z.shape
         x = x.view(b, self.z_dim, 4, 4)
@@ -221,7 +222,7 @@ class ResNet18Dec(nn.Module):
         x = self.layer3(x)
         x = self.layer2(x)
         x = self.layer1(x)
-        x = torch.sigmoid(self.conv1(x))
+        x = torch.tanh(self.conv1(x))
 
         b,c,w,h = x.shape
         # print(x.shape)
