@@ -123,7 +123,7 @@ class MicroSplitHCSInferenceDataset(Dataset):
         multi_ch_img = torch.from_numpy(multi_ch_img).float()
 
         # crop image in a grid of overlapping patches
-        multi_ch_img, coords = extract_overlapping_patches_grid(
+        multi_ch_patches, coords = extract_overlapping_patches_grid(
             img=multi_ch_img.numpy(),
             patch_size=self.crop_size,
             overlap=(self.crop_size[0] // 2, self.crop_size[1] // 2)
@@ -131,7 +131,7 @@ class MicroSplitHCSInferenceDataset(Dataset):
         patches_info = {"coords": coords, "idx": index}
 
         # get superimposed image
-        mixed_img = torch.mean(multi_ch_img, dim=1, keepdim=True)
+        mixed_img = torch.mean(multi_ch_patches, dim=1, keepdim=True)
 
         return mixed_img, multi_ch_img, patches_info
     
@@ -238,7 +238,7 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
-            batch_size=self.batch_size, 
+            batch_size=1, 
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=self.test_data_collate_fn

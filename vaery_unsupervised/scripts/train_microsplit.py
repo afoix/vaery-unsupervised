@@ -19,14 +19,12 @@ from microsplit_reproducibility.configs.factory import (
     get_lr_scheduler_config,
 )
 from microsplit_reproducibility.configs.parameters._base import SplittingParameters
-from microsplit_reproducibility.notebook_utils.custom_dataset_2D import (
-    get_unnormalized_predictions, get_target, get_input,
-)
 
 from vaery_unsupervised.microsplit.utils import (
     compute_metrics,
     show_metrics,
     full_frame_evaluation,
+    get_MicroSplit_predictions
 )
 from vaery_unsupervised.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
 
@@ -150,25 +148,19 @@ trainer.fit(
 )
 
 #%%
-# Evaluate model on val dataset
-stitched_predictions, _, stitched_stds = (
-    get_unnormalized_predictions(
-        model,
-        data_module.val_dataset,
-        data_key=..., # FIXME
-        mmse_count=10,
-        grid_size=64,
-        num_workers=3,
-        batch_size=32,
-    )
+# Evaluate model on test dataset
+unmixed_predictions, unmixed_stds = get_MicroSplit_predictions(
+    model=model,
+    dloader=data_module.test_dataloader(),
+    mmse_count=5
 )
 
 
 #%%
 # Visualize predictions
 # get the target and input from the test dataset for visualization purposes
-tar = get_target(data_module.val_dataset)
-inp = get_input(data_module.val_dataset).sum(-1)
+tar = data_module.val_dataset[1]
+inp = data_module.val_dataset[0].sum(-1)
 
 #%%
 frame_idx = 0 # Change this index to visualize different frames

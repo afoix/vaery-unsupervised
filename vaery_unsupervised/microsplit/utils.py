@@ -1,14 +1,10 @@
-from typing import Any
-from pathlib import Path
-from typing import Literal, Union
+from collections import defaultdict
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pytorch_lightning as pl
 import torch
-from careamics.lvae_training.dataset import DataSplitType
-from careamics.lvae_training.dataset.utils.data_utils import get_datasplit_tuples
-from microsplit_reproducibility.datasets.custom_dataset_2D import load_one_file
+from tqdm import tqdm
 from microsplit_reproducibility.utils.paper_metrics import avg_range_inv_psnr, compute_SE, _get_list_of_images_from_gt_pred
 from microssim import MicroMS3IM, MicroSSIM
 from numpy.typing import NDArray
@@ -274,3 +270,110 @@ def extract_overlapping_patches_grid(
             coords.append((y, y+ph, x, x+pw))  # (y0,y1,x0,x1) in the original image
 
     return np.stack(patches), coords
+
+
+def get_MicroSplit_predictions(
+    model: torch.nn.Module,
+    dloader: torch.utils.data.DataLoader,
+    mmse_count: int = 1,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Get full-frame predictions for LVAE model for the entire dataset.
+
+    Parameters
+    ----------
+    model : VAEModule
+        Lightning model of LVAE used for prediction.
+    dloader : DataLoader
+        DataLoader to predict on. Dataset must be a `InMemoryTiledPredDataset` object.
+    mmse_count : int, optional
+        Number of samples to generate for each input and then to average over for
+        MMSE estimation, by default 1.
+    
+    Returns
+    -------
+    tuple[list[np.ndarray], list[np.ndarray]]
+        (unmixed_images, unmixed_stds)
+    """
+    with torch.no_grad():
+        tiles_info: list[dict] = []
+        unmixed_tiles_list: list[NDArray] = []
+        unmixed_stds_list: list[NDArray] = []
+        for batch in tqdm(dloader, desc="Predicting batches"):
+            inps, tinfos = batch
+            inps = inps.cuda()
+
+            # --- get samples for MMSE estimation
+            unmixed_mmse_tiles: list[NDArray] = []
+            for _ in range(mmse_count):
+                unmixed, _ = model(inps)
+                if model.model.predict_logvar is None:
+                    unmixed_tiles = unmixed
+                    logvar_tiles = torch.tensor([-1])
+                else:
+                    unmixed_tiles, _ = torch.chunk(unmixed, chunks=2, dim=1)
+                unmixed_mmse_tiles.append(unmixed_tiles.unsqueeze(0).cpu().numpy())
+                
+            # --- compute MMSE estimates
+            unmixed_mmse_tiles: NDArray = np.concatenate(unmixed_mmse_tiles)
+            unmixed_mmse_preds = unmixed_mmse_tiles.mean(axis=0)
+            unmixed_mmse_stds = unmixed_mmse_tiles.std(axis=0)
+
+            # --- append to lists
+            tiles_info.extend(tinfos)
+            unmixed_tiles_list.append(unmixed_mmse_preds)
+            unmixed_stds_list.append(unmixed_mmse_stds)
+
+    # stitch tiles into full images for each of the lists
+    unmixed_imgs = stitch_tiles(
+        tiles=unmixed_tiles_list,
+        metas=tiles_info,
+    )
+    unmixed_stds = stitch_tiles(
+        tiles=unmixed_stds_list,
+        metas=tiles_info,
+    )
+    return unmixed_imgs, unmixed_stds
+
+
+def stitch_tiles(
+    tiles: list[np.ndarray],
+    metas: list[dict],
+) -> dict[int, np.ndarray]:
+    """
+    Reconstruct images by averaging overlapping tiles.
+
+    Args:
+      tiles: list of arrays with shape [C, h, w]
+      metas: list of {"coords": (y0,y1,x0,x1), "idx": int}
+
+    Returns:
+      dict: {image_id: array [C, H, W]}
+    """
+    # group indices by image id
+    by_img = defaultdict(list)
+    for i, m in enumerate(metas):
+        by_img[m["idx"]].append(i)
+
+    images = []
+    for img_id in sorted(by_img.keys()):  # sorted for consistent order
+        idxs = by_img[img_id]
+
+        # infer full size from coords
+        H = max(metas[i]["coords"][1] for i in idxs)
+        W = max(metas[i]["coords"][3] for i in idxs)
+        C = tiles[idxs[0]].shape[0]
+
+        acc  = np.zeros((C, H, W), dtype=np.float32)
+        wacc = np.zeros((1, H, W), dtype=np.float32)
+
+        for i in idxs:
+            y0, y1, x0, x1 = metas[i]["coords"]
+            t = tiles[i]
+            hh = min(t.shape[1], y1 - y0)
+            ww = min(t.shape[2], x1 - x0)
+            acc[:, y0:y0+hh, x0:x0+ww] += t[:, :hh, :ww]
+            wacc[:, y0:y0+hh, x0:x0+ww] += 1.0
+
+        images.append((acc / np.clip(wacc, 1e-8, None)).astype(tiles[idxs[0]].dtype))
+
+    return images
