@@ -1,14 +1,13 @@
 import logging
 
-import lightning as L
-from torch import Tensor
-from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import v2
-from iohub import open_ome_zarr
-import numpy as np
 #from monai.transforms import RandSpatialCropSamples
+from typing import List, Tuple, Union
 
-from typing import Tuple, Union, List
+import lightning as L
+import numpy as np
+from iohub import open_ome_zarr
+from torch.utils.data import DataLoader, Dataset
+from torchvision.transforms import v2
 
 _logger = logging.getLogger("lightning.pytorch")
 #_logger.setLevel(logging.DEBUG)
@@ -120,7 +119,7 @@ class SalBrainDataset(Dataset):
 
         self.data_path = data_path
         self.patch_size = patch_size
-        self.exclude_channels = [4, 5] # these aren't removed until the __get__ function
+        self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
 
         with open_ome_zarr(
             self.data_path,
