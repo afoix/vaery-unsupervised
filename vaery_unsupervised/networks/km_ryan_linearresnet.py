@@ -136,6 +136,39 @@ class BasicBlockDec(nn.Module):
         out = torch.relu(out)
         return out
 
+class UpsampleConv(nn.Module):
+    def __init__(
+            self, 
+            in_channels,
+            out_channels,
+            scale_factor= 2, 
+            kernel_size = 3
+        ):
+        super().__init__()
+        self.upsample = ResizeConv2d(
+            in_channels = in_channels,
+            out_channels = out_channels,
+            scale_factor= scale_factor, 
+            kernel_size = kernel_size
+        )
+        self.conv_1 = nn.Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            padding=1
+        )
+        self.conv_2 = nn.Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            padding=1
+        )
+    def forward(self, x):
+        x = torch.relu(self.upsample(x))
+        x = torch.relu(self.conv_1(x))
+        x = torch.relu(self.conv_2(x))
+        return x
+
 class ResNet18Dec(nn.Module):
 
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=28):
@@ -149,7 +182,7 @@ class ResNet18Dec(nn.Module):
         #self.linear = nn.Conv2d(z_dim, 512, kernel_size=1) #original but we want a conv
         self.linear = nn.Linear(z_dim, self.linear_outfeatures)
         # print('making layer 4')
-        self.upsample = ResizeConv2d(in_channels = z_dim, out_channels = self.in_planes, scale_factor= 2, kernel_size = 3)
+        
         self.layer4 = self._make_layer(BasicBlockDec, 256, num_Blocks[3], stride=2) 
         # print('making layer 3')
         self.layer3 = self._make_layer(BasicBlockDec, 128, num_Blocks[2], stride=2)
