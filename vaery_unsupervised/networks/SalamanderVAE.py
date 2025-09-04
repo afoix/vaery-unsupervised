@@ -1,15 +1,14 @@
 import logging
+from typing import Sequence
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from lightning import LightningModule
-from skimage.exposure import rescale_intensity
-from typing import Sequence
-import numpy as np
 from matplotlib.cm import get_cmap
-import matplotlib.pyplot as plt
-from torchvision.utils import make_grid
+from skimage.exposure import rescale_intensity
 
-from .VAE_3D_resnet18 import ResNet18Enc, ResNet18Dec
+from .VAE_3D_resnet18 import ResNet18Dec, ResNet18Enc
 
 _logger = logging.getLogger("lightning.pytorch")
 #_logger.setLevel(logging.DEBUG)

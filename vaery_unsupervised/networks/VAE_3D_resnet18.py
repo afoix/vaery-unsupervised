@@ -1,7 +1,8 @@
 import logging
+
 import torch
 import torch.nn.functional as F
-from torch import nn, optim
+from torch import nn
 
 _logger = logging.getLogger("lightning.pytorch")
 # _logger.setLevel(logging.DEBUG)
@@ -155,12 +156,9 @@ class ResNet18Dec(nn.Module):
         self.out_features = out_features
         self.matrix_size = matrix_size
 
-        # self.linear = nn.Conv3d(in_channels=z_dim, 
-        #                         out_channels=512, 
-        #                         kernel_size=1)
-        #in_size = int(64 / matrix_size)
-        #self.linear = nn.Linear(z_dim, 512) #* int(64/matrix_size)**3)
-        self.upsample = ResizeConv3d(in_channels=z_dim, out_channels=self.in_features, scale_factor=2, kernel_size=3)
+        up_scale = matrix_size // 16
+
+        self.upsample = ResizeConv3d(in_channels=z_dim, out_channels=self.in_features, scale_factor=up_scale, kernel_size=3)
         self.layer4 = self._make_layer(BasicBlockDec, 256, num_Blocks[3], stride=2)
         self.layer3 = self._make_layer(BasicBlockDec, 128, num_Blocks[2], stride=2)
         self.layer2 = self._make_layer(BasicBlockDec, 64, num_Blocks[1], stride=2)

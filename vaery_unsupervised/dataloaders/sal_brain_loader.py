@@ -120,7 +120,7 @@ class SalBrainDataset(Dataset):
 
         self.data_path = data_path
         self.patch_size = patch_size
-        self.exclude_channels = [4, 5]
+        self.exclude_channels = [4, 5] # these aren't removed until the __get__ function
 
         with open_ome_zarr(
             self.data_path,

@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import nn, optim
+from torch import nn
 
 
 class ResizeConv2d(nn.Module):
