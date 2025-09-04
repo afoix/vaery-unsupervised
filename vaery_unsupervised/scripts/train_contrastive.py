@@ -35,7 +35,7 @@ data_module = HCSDataModule(
         weight_channel_name='nuclei',
         crop_size=(128, 128),
         crops_per_position=4,
-        batch_size=32,
+        batch_size=64,
         num_workers=6,
         split_ratio=0.8,
         normalization_transform=[],
@@ -114,7 +114,7 @@ logging_path.mkdir(exist_ok=True)
 logger = TensorBoardLogger(save_dir=logging_path,name="contrastive_first")
 def main(*args, **kwargs):
     trainer = L.Trainer(
-        max_epochs = 350, accelerator = "gpu", precision = "32", logger=logger,
+        max_epochs = 250, accelerator = "gpu", precision = "32", logger=logger,
         callbacks=[
             ModelCheckpoint(
                 save_last=True, save_top_k=8, monitor='loss/val', every_n_epochs=1

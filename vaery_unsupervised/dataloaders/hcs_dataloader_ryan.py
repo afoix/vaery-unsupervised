@@ -61,23 +61,23 @@ class ContrastiveHCSDataset(Dataset):
         weight_channel_index = self.source_channel_names.index('nuclei')
         weight_img = img_cyx[weight_channel_index:weight_channel_index+1]  # Shape: (1, Y, X)
         random_weighted_crop = Compose([
-            RandRotate(
-                range_x=5,
-                prob=0.1, keep_size=True,
-                mode="bilinear",
-                padding_mode="zeros"),
+            # RandRotate(
+            #     range_x=5,
+            #     prob=0.1, keep_size=True,
+            #     mode="bilinear",
+            #     padding_mode="zeros"),
             RandWeightedCrop(
                 spatial_size=(self.crop_size[0]*1.41,self.crop_size[1]*1.41),
                 weight_map=weight_img,  # Remove channel dim, now (Y, X)
                 num_samples=1),
-            RandAffine(
-                scale_range =[0.0, 0.05,0.05],
-                shear_range = [0.0,0.005,0.005],
-                prob = 0.1),
-            RandGaussianNoise(
-                mean =0.0,
-                std=0.9,
-                prob=1)
+            # RandAffine(
+            #     scale_range =[0.0, 0.05,0.05],
+            #     shear_range = [0.0,0.005,0.005],
+            #     prob = 0.1)
+            # RandGaussianNoise(
+            #     mean =0.0,
+            #     std=0.02,
+            #     prob=0.05)
                 ])
 
 

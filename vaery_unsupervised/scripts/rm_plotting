@@ -53,7 +53,7 @@ val_loader = data_module.val_dataloader()
 
 #%%
 
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_23/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_28/checkpoints/last.ckpt"
 
 hcs_encoder_config = {
     "backbone": "resnet18",
@@ -75,7 +75,52 @@ model = ContrastiveModule.load_from_checkpoint(
 model = model.cuda()
 model.eval()
 
+#%% 
+#for plotting projections
+# all_emb, all_proj, all_pos_info = [], [], []
+
+# with torch.no_grad():
+#     for batch in val_loader:
+#         emb, proj = model.encoder(batch["anchor"].cuda())
+#         all_emb.append(emb.cpu())
+#         all_proj.append(proj.cpu())
+#         all_pos_info.extend(batch["pos_info"])  # <-- collect position info here
+
+# # concatenate tensors into numpy arrays
+# all_emb = torch.cat(all_emb, dim=0).numpy()
+# all_proj = torch.cat(all_proj, dim=0).numpy()
+# #%%
+# import pandas as pd
+
+# # Make DataFrame from all_proj
+# proj_df = pd.DataFrame(all_proj, columns=[f"proj_{i}" for i in range(all_proj.shape[1])])
+
+# # Make DataFrame for pos info
+# pos_df = pd.DataFrame(all_pos_info, columns=["pos_info"])
+# pos_df[["row", "col", "field"]] = pos_df["pos_info"].str.split("/", expand=True)
+
+# # Combine projections and position info into one table
+# full_df = pd.concat([proj_df, pos_df], axis=1)
+
+# # Optional: convert row/col/field to integers
+# full_df["row"] = full_df["row"].astype(int)
+# full_df["col"] = full_df["col"].astype(int)
+# full_df["field"] = full_df["field"].astype(int)
+
+# annotations_path= '/mnt/efs/aimbl_2025/student_data/S-RM'
+
+# # Load annotation CSV
+# annotations = pd.read_csv(f"{annotations_path}/annotations.csv")
+# annotations = annotations.rename(columns={'row_num': 'row', 'column': 'col'})
+
+# # Merge 'gene' into full_df
+# full_df = full_df.merge(annotations[['gene', 'col','row']], on=['row', 'col'], how='left')
+
+# # Check
+# full_df.info()
+
 #%%
+#for plotting embeddings
 all_emb, all_proj, all_pos_info = [], [], []
 
 with torch.no_grad():
@@ -92,14 +137,14 @@ all_proj = torch.cat(all_proj, dim=0).numpy()
 import pandas as pd
 
 # Make DataFrame from all_proj
-proj_df = pd.DataFrame(all_proj, columns=[f"proj_{i}" for i in range(all_proj.shape[1])])
+emb_df = pd.DataFrame(all_emb, columns=[f"proj_{i}" for i in range(all_emb.shape[1])])
 
 # Make DataFrame for pos info
 pos_df = pd.DataFrame(all_pos_info, columns=["pos_info"])
 pos_df[["row", "col", "field"]] = pos_df["pos_info"].str.split("/", expand=True)
 
-# Combine projections and position info into one table
-full_df = pd.concat([proj_df, pos_df], axis=1)
+# Combine embeddings and position info into one table
+full_df = pd.concat([emb_df, pos_df], axis=1)
 
 # Optional: convert row/col/field to integers
 full_df["row"] = full_df["row"].astype(int)
@@ -143,7 +188,7 @@ scatter = plt.scatter(proj_2d[:, 0], proj_2d[:, 1],
 
 plt.xlabel("PC1")
 plt.ylabel("PC2")
-plt.title("PCA of Contrastive Projections by Gene")
+plt.title("PCA of Contrastive Embeddings by Gene")
 plt.tight_layout()
 plt.show()
 
@@ -176,7 +221,7 @@ scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
 
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
-plt.title("UMAP of Contrastive Projections by Gene")
+plt.title("UMAP of Contrastive Embeddings by Gene")
 plt.tight_layout()
 plt.show()
 
@@ -205,7 +250,7 @@ plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
 
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
-plt.title("UMAP of Contrastive Projections\nHighlighting negcon")
+plt.title("UMAP of Contrastive Embeddings\nHighlighting negcon")
 plt.tight_layout()
 plt.show()
  #%%
@@ -234,7 +279,7 @@ plt.scatter(proj_2d[:, 0], proj_2d[:, 1],
 
 plt.xlabel("PC1")
 plt.ylabel("PC2")
-plt.title("PCA of Contrastive Projections\nHighlighting negcon")
+plt.title("PCA of Contrastive Embeddings\nHighlighting negcon")
 plt.tight_layout()
 plt.show()
 #%%
@@ -259,12 +304,41 @@ cbar.set_label("Row")
 
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
-plt.title("UMAP of Contrastive Projections colored by Row")
+plt.title("UMAP of Contrastive Embeddings colored by Row")
 plt.tight_layout()
 plt.show()
 
 #%%
+#%%
+#%%
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
+# Run t-SNE on projections
+tsne_model = TSNE(n_components=2, random_state=57, perplexity=30, max_iter=1000)
+proj_2d_tsne = tsne_model.fit_transform(all_proj)
+
+# Gene labels
+gene_labels = full_df["gene"].fillna("NA")
+
+# Build color array: grey by default, special color for negcon
+colors = ["lightgrey"] * len(gene_labels)
+for i, g in enumerate(gene_labels):
+    if g.lower() == "negcon":
+        colors[i] = "red"   # highlight negcon in red
+
+# Plot
+plt.figure(figsize=(12, 10))
+plt.scatter(proj_2d_tsne[:, 0], proj_2d_tsne[:, 1],
+            c=colors, alpha=0.6)
+
+plt.xlabel("t-SNE-1")
+plt.ylabel("t-SNE-2")
+plt.title("t-SNE of Contrastive Embeddings\nHighlighting negcon")
+plt.tight_layout()
+plt.show()
+
+#%%
 
 
 
