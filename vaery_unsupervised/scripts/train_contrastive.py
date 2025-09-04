@@ -114,7 +114,7 @@ logging_path.mkdir(exist_ok=True)
 logger = TensorBoardLogger(save_dir=logging_path,name="contrastive_first")
 def main(*args, **kwargs):
     trainer = L.Trainer(
-        max_epochs = 200, accelerator = "gpu", precision = "32", logger=logger,
+        max_epochs = 350, accelerator = "gpu", precision = "32", logger=logger,
         callbacks=[
             ModelCheckpoint(
                 save_last=True, save_top_k=8, monitor='loss/val', every_n_epochs=1
