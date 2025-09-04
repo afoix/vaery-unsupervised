@@ -53,7 +53,7 @@ val_loader = data_module.val_dataloader()
 
 #%%
 
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_28/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_29/checkpoints/last.ckpt"
 
 hcs_encoder_config = {
     "backbone": "resnet18",
