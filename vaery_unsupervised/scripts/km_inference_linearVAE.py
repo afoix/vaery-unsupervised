@@ -50,7 +50,7 @@ for batch in loader:
 #%%
 
 #%%
-checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_fixedfinallinear_attempt3/version_0/checkpoints/epoch=271-step=11696.ckpt"
+checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_latentsize_512/version_0/checkpoints/epoch=97-step=4214.ckpt"
 model = SpatialVAE_Linear.load_from_checkpoint(checkpoint_path=checkpoint_path, strict = True)
 
 #%% Compact model loading with error handling
@@ -61,6 +61,7 @@ import torch
 #%%
 from vaery_unsupervised.networks.LightningVAE_linear_km import reparameterize
 
+
 # %%
 for batch in loader:
     image_ids = batch["metadata"]['well_id']
@@ -70,12 +71,6 @@ for batch in loader:
     break
 
 
-# %%
-input[:,[model.channels_selection],:,:].shape
-# %%
-model.channels_selection
-# %%
-model.device
 # %%
 all_image_ids = []
 all_input = []
@@ -108,26 +103,135 @@ all_z_log_var = torch.cat(all_z_log_var, dim = 0).numpy()
 all_z = torch.cat(all_z, dim = 0).numpy()
     
 #%%
-all_image_ids.shape
-import pandas as pd
-
-#%%
-np.arange(1,128)
-#%%
-df = pd.DataFrame(data = all_z, index = all_image_ids, columns = np.arange(1,129))
-#%%
-df
-# %%
 from vaery_unsupervised.plotting_utils import *
 from sklearn.decomposition import PCA
+
+#%%
+df = pd.DataFrame(data = all_z, index = all_image_ids, columns = np.arange(1,all_z.shape[1]+1))
+#%%
+import matplotlib.pyplot as plt
+import plotly.express as px
+import anndata as ad
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from umap.umap_ import UMAP
+#%%
+#%%
+metadata_ad = ad.read_h5ad("/mnt/efs/aimbl_2025/student_data/S-KM/001_Used_Zarrs/fullanndata_batch1")
+
+metadata_ai_ad = ad.read_h5ad("/mnt/efs/aimbl_2025/student_data/S-KM/001_Used_Zarrs/fullanndata_aimbl")
+#%%
+metadata_ad.obs[f'ANXA2_log2'] = metadata_ad[:, metadata_ad.var_names == "ANXA2"].layers["log2"].flatten()
+metadata_ai_ad.obs[f'ANXA2_log2'] = metadata_ai_ad[:, metadata_ai_ad.var_names == "ANXA2"].layers["log2"].flatten()
+#%%
+metadata = pd.DataFrame(metadata_ad.obs)
+metadata_ai = pd.DataFrame(metadata_ai_ad.obs)
+#%%
+anxa2 = metadata_ad.var_names[metadata_ad.var_names == "ANXA2"]
+anxa2
+#%%
+df_z = pd.DataFrame(data = all_z, index=all_image_ids, columns = np.arange(1,all_z.shape[1]+1))
+scaler = StandardScaler()
+df_z_scaled = scaler.fit_transform(df_z)
+
+#%%
+umap_z = UMAP(n_neighbors = 15, n_components=3).fit_transform(df_z_scaled)
+umap_z = pd.DataFrame(umap_z, index=all_image_ids)
+umap_z_columnnames = [f'umap{i}' for i in np.arange(1,umap_z.shape[1]+1)]
+umap_z.columns = umap_z_columnnames
+umap_z = umap_z.reset_index().rename(columns = {"index":"plate_id"})
+fig = plt.scatter(x = umap_z["umap1"], y = umap_z["umap2"])
+plt.show(fig)
+
+#%%
+umap_z = umap_z.merge(metadata[["trajectory", "area", "distance_to_SE", "plate_id", "pg_cnt", "ANXA2_log2", "patient_id"]], 
+                    how="left", on="plate_id")
+umap_z = umap_z.merge(metadata_ai[["plate_id", "pg_cnt", "ANXA2_log2", "patient_id"]], 
+                    how="left", on="plate_id", suffixes=('', '_ai'))
+
+# Fill NaN values in original columns with values from _ai columns
+umap_z['pg_cnt'] = umap_z['pg_cnt'].fillna(umap_z['pg_cnt_ai'])
+umap_z['ANXA2_log2'] = umap_z['ANXA2_log2'].fillna(umap_z['ANXA2_log2_ai'])
+umap_z['patient_id'] = umap_z['patient_id'].astype("str").fillna(umap_z['patient_id_ai'])
+
+# Drop the duplicate columns
+umap_z = umap_z.drop(columns=['pg_cnt_ai', 'ANXA2_log2_ai'])
+
+#%%
+fig = px.scatter(umap_z, x='umap1', y='umap2', hover_data = "plate_id", color = "area")
+fig.show()
+
+
+#%%
+tsne_z = TSNE(n_components=3).fit_transform(df_z_scaled, y=None)
+tsne_z = pd.DataFrame(tsne_z, index=all_image_ids)
+tsne_z_columnnames = [f'tsne{i}' for i in np.arange(1,tsne_z.shape[1]+1)]
+tsne_z.columns = tsne_z_columnnames
+tsne_z = tsne_z.reset_index().rename(columns = {"index":"plate_id"})
+fig = plt.scatter(x = tsne_z["tsne1"], y = tsne_z["tsne2"])
+plt.show(fig)
+
+#%%
+tsne_z = tsne_z.merge(metadata[["trajectory", "area", "distance_to_SE", "plate_id", "pg_cnt", "ANXA2_log2", "patient_id"]], 
+                    how="left", on="plate_id")
+tsne_z = tsne_z.merge(metadata_ai[["plate_id", "pg_cnt", "ANXA2_log2", "patient_id"]], 
+                    how="left", on="plate_id", suffixes=('', '_ai'))
+
+# Fill NaN values in original columns with values from _ai columns
+tsne_z['pg_cnt'] = tsne_z['pg_cnt'].fillna(tsne_z['pg_cnt_ai'])
+tsne_z['ANXA2_log2'] = tsne_z['ANXA2_log2'].fillna(tsne_z['ANXA2_log2_ai'])
+tsne_z['patient_id'] = tsne_z['patient_id'].astype("str").fillna(tsne_z['patient_id_ai'])
+
+# Drop the duplicate columns
+tsne_z = tsne_z.drop(columns=['pg_cnt_ai', 'ANXA2_log2_ai', "patient_id_ai"])
+
+#%%
+fig = px.scatter(tsne_z, x='tsne1', y='tsne2', hover_data = "plate_id", color = "area")
+fig.show()
+
+
+#%%
+pca_z = PCA(n_components=3).fit_transform(df_z_scaled, y=None)
+pca_z = pd.DataFrame(pca_z, index=all_image_ids)
+pca_z_columnnames = [f'pc{i}' for i in np.arange(1,pca_z.shape[1]+1)]
+pca_z.columns = pca_z_columnnames
+pca_z = pca_z.reset_index().rename(columns = {"index":"plate_id"})
+fig = plt.scatter(x = pca_z["pc1"], y = pca_z["pc2"])
+plt.show(fig)
+
+#%%
+pca_z = pca_z.merge(metadata[["trajectory", "area", "distance_to_SE", "plate_id", "pg_cnt", "ANXA2_log2"]], 
+                    how="left", on="plate_id")
+pca_z = pca_z.merge(metadata_ai[["plate_id", "pg_cnt", "ANXA2_log2"]], 
+                    how="left", on="plate_id", suffixes=('', '_ai'))
+
+# Fill NaN values in original columns with values from _ai columns
+pca_z['pg_cnt'] = pca_z['pg_cnt'].fillna(pca_z['pg_cnt_ai'])
+pca_z['ANXA2_log2'] = pca_z['ANXA2_log2'].fillna(pca_z['ANXA2_log2_ai'])
+
+# Drop the duplicate columns
+pca_z = pca_z.drop(columns=['pg_cnt_ai', 'ANXA2_log2_ai'])
+#%%
+fig = px.scatter(pca_z, x='pc1', y='pc2', hover_data = "plate_id", color = "area")
+fig.show()
+
+#%%
+
+
+#%%
+fig = px.scatter_3d(pca_z, x='pc1', y='pc2', z= "pc3", hover_data = "plate_id", color = "area")
+
+
 # %%
-pca = PCA(n_components=50).fit_transform(df, y=None)
-pca = pd.DataFrame(pca)
-pca.index = all_image_ids
-pd.DataFrame(pca)
-pca_columnnames = [f'pc{i}' for i in np.arange(1,51)]
-pca.columns = pca_columnnames
-# %%
+import plotly.io as pio
+pio.renderers.default = "browser"  # or "png", "svg", etc.
+fig.show()
+
+#%%
+pca = pca.reset_index().rename(columns = {"index":"label"})
+#
+#colors = [color_map[mapping[label]] for label in labels]
+
 import pandas as pd
 import io
 import base64
@@ -139,333 +243,58 @@ from PIL import Image
 import numpy as np
 from matplotlib.colors import to_hex
 
-# code taken and modified from: https://dash.plotly.com/dash-core-components/tooltip?_gl=1*9tyg7p*_ga*NDYwMzcxMTAxLjE2Njk3MzgyODM.*_ga_6G7EE0JNSC*MTY3MzI2ODgyOS45LjEuMTY3MzI2OTA0Ni4wLjAuMA..
-# under the The MIT License (MIT)
-
-# Copyright (c) 2023 Plotly, Inc
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-
-def get_dash_app_3D_scatter_hover_images(
-    dataframe:pd.DataFrame,
-    plot_keys:list, 
-    hue:str,
-    images:np.ndarray,
-    additional_info: str = "",
-    image_size = 200,
-):
-    """
-    The get_dash_app_3D_scatter_hover_images() function creates a Dash app that displays a 3D 
-    scatter plot with hover information for each data point. The hover information consists of 
-    an image and a label associated with the data point. The image is retrieved from an array 
-    of images passed to the function.
-    
-    Parameters
-    ----------
-    dataframe: pd.DataFrame
-        A Pandas DataFrame containing the data to be plotted.
-    plot_keys: list 
-        A list of column names in the dataframe that represent the x, y, and z coordinates of 
-        the data points.
-    hue: str
-        A string representing the column name in the dataframe that contains the labels 
-        associated with the data points.
-    images: np.ndarray
-        A numpy array containing the images to be displayed in the hover information.
-    additional_info: str
-        Column name of information which will be displayed with the hover data
-    Returns:
-        app: a Dash app object representing the 3D scatter plot with hover information.
-    """
-    # Create a color map for each categorical value and assigns a color to each data 
-    # point based on its category. It then extracts the x, y, and z data from the 
-    # input DataFrame, and uses them to create a 3D scatter plot using the 
-    # plotly.graph_objects library.
-    
-    labels = dataframe[hue].to_numpy()
-    if labels.dtype.name == 'object':
-        unique_labels = sorted(np.unique(labels))
-        # Fix: Generate enough colors for all unique labels
-        color_map = list(sns.color_palette("tab10", n_colors=len(unique_labels)).as_hex())
-        mapping = {value:integer for integer,value in enumerate(unique_labels)}
-        colors = [color_map[mapping[label]] for label in labels]
-    else:
-        color_map = sns.color_palette("rocket",as_cmap=True)
-        scaled = np.array((labels - labels.min()) / (labels.max()-labels.min()))
-        colors = [to_hex(color_map(val)) for val in scaled]
-    
-    add_info = ["" for i in range(len(dataframe))]
-    if additional_info != "":
-        add_info = dataframe[additional_info].to_numpy()
-
-    
-    x,y,z = [dataframe[key].to_numpy() for key in plot_keys]
-
-    # Make the plot. 
-    fig = go.Figure(
-        data=[go.Scatter3d(
-            x=x,
-            y=y,
-            z=z,
-            mode='markers',
-            opacity=0.7,
-            marker=dict(
-                size=5,
-                color=colors,
-            ))],
-    )
-
-    # The plot's hover information is set to "none" and its hover template is set 
-    # to None to prevent default hover information from being displayed. The plot's 
-    # layout is set to fixed dimensions of 1500x800 pixels.
-    fig.update_traces(
-        hoverinfo="none",
-        hovertemplate=None,
-    )
-
-    fig.update_layout(
-        autosize=False,
-        width=1500,
-        height=800,
-        scene = dict(
-            xaxis_title=plot_keys[0],
-            yaxis_title=plot_keys[1],
-            zaxis_title=plot_keys[2]
-        ),
-    )
-
-
-    # Definition of a JupyterDash application and creates a layout 
-    # consisting of a dcc.Graph component for the 3D scatter plot and a dcc.Tooltip 
-    # component for the hover information.
-    app = Dash(__name__)
-
-    app.layout = html.Div(
-        className="container",
-        children=[
-            dcc.Graph(id="graph-5", figure=fig, clear_on_unhover=True),
-            dcc.Tooltip(id="graph-tooltip-5", direction='bottom'),
-        ],
-    )
-
-    # Definition of a callback function that listens for hover events on the 3D scatter 
-    # plot and returns the appropriate hover information. When a data point is hovered 
-    # over, the callback extracts the point's index and image from the input images array, 
-    # converts the image to a base64 encoded string using the np_image_to_base64 helper 
-    # function, and returns a html.Div containing the image and the category label of 
-    # the hovered data point.
-    @app.callback(
-        Output("graph-tooltip-5", "show"),
-        Output("graph-tooltip-5", "bbox"),
-        Output("graph-tooltip-5", "children"),
-        Input("graph-5", "hoverData"),
-    )
-    def display_hover(hoverData):
-        if hoverData is None:
-            return False, no_update, no_update
-
-        # demo only shows the first point, but other points may also be available
-        hover_data = hoverData["points"][0]
-        bbox = hover_data["bbox"]
-        num = hover_data["pointNumber"]
-
-        im_matrix = images[num]
-        im_url = np_image_to_base64(im_matrix)
-        children = [
-            html.Div([
-                html.Img(
-                    src=im_url, style={"width": "100%"},
-                ),
-                html.P(hue + ": " + str(labels[num]), style={'font-weight': 'bold'}),
-                html.P(additional_info + ": " + str(add_info[num]), style={'font-weight': 'bold'})
-            ], style={'width': f'{image_size}px', 'white-space': 'normal'})
-        ]
-
-        return True, bbox, children
-
-    return app
-
-#TODO Correct Docstring
-def get_dash_app_2D_scatter_hover_images(
-    dataframe:pd.DataFrame,
-    plot_keys:list, 
-    hue:str,
-    images:np.ndarray,
-    additional_info: str = "",
-    image_size: int = 200,
-    marker_size: int = 20,
-):
-    """
-    The get_dash_app_2D_scatter_hover_images() function creates a Dash app that displays a 2D 
-    scatter plot with hover information for each data point. The hover information consists of 
-    an image and a label associated with the data point. The image is retrieved from an array 
-    of images passed to the function.
-    
-    Parameters
-    ----------
-    dataframe: pd.DataFrame
-        A Pandas DataFrame containing the data to be plotted.
-    plot_keys: list 
-        A list of column names in the dataframe that represent the x and y coordinates of 
-        the data points.
-    hue: str
-        A string representing the column name in the dataframe that contains the labels 
-        associated with the data points.
-    images: np.ndarray
-        A numpy array containing the images to be displayed in the hover information.
-    additional_info: str
-        Column name of information which will be displayed with the hover data
-    image_size: int
-        Size of the preview image displayed when hovering over a datapoint
-
-    Returns:
-        app: a Dash app object representing the 3D scatter plot with hover information.
-    """
-    # Create a color map for each categorical value and assigns a color to each data 
-    # point based on its category. It then extracts the x, y, and z data from the 
-    # input DataFrame, and uses them to create a 3D scatter plot using the 
-    # plotly.graph_objects library.
-
-    labels = dataframe[hue].to_numpy()
-    if labels.dtype.name == 'object':
-        # Convert all labels to strings to avoid comparison errors
-        labels_str = [str(label) for label in labels]
-        unique_labels = sorted(set(labels_str))  # Use set() to avoid np.unique() issues
-        color_map = list(sns.color_palette("tab10", n_colors=len(unique_labels)).as_hex())
-        mapping = {value: integer for integer, value in enumerate(unique_labels)}
-        colors = [color_map[mapping[str(label)]] for label in labels]
-    else:
-        color_map = sns.color_palette("flare",as_cmap=True)
-        scaled = np.array((labels - labels.min()) / (labels.max()-labels.min()))
-        colors = [to_hex(color_map(val)) for val in scaled]
-    
-    add_info = ["" for i in range(len(dataframe))]
-    if additional_info != "":
-        add_info = dataframe[additional_info].to_numpy()
-    
-    x,y = [dataframe[key].to_numpy() for key in plot_keys]
-
-    # Make the plot. 
-    fig = go.Figure(   data=[go.Scatter(
-        x=x,
-        y=y,
-        mode='markers',
-        opacity=0.8,
-        marker=dict(
-            size=marker_size,
-            color=colors,
-        )
-    )])
-
-    # The plot's hover information is set to "none" and its hover template is set 
-    # to None to prevent default hover information from being displayed. The plot's 
-    # layout is set to fixed dimensions of 1500x800 pixels.
-    fig.update_traces(
-        hoverinfo="none",
-        hovertemplate=None,
-    )
-
-    fig.update_layout(
-        autosize=False,
-        width=1000,
-        height=1000,
-        scene = dict(
-            xaxis_title=plot_keys[0],
-            yaxis_title=plot_keys[1],
-        )
-    )
-
-
-    # Definition of a JupyterDash application and creates a layout 
-    # consisting of a dcc.Graph component for the 3D scatter plot and a dcc.Tooltip 
-    # component for the hover information.
-    app = Dash(__name__)
-
-    app.layout = html.Div(
-        className="container",
-        children=[
-            dcc.Graph(id="graph-5", figure=fig, clear_on_unhover=True),
-            dcc.Tooltip(id="graph-tooltip-5", direction='bottom'),
-        ],
-    )
-
-    # Definition of a callback function that listens for hover events on the 3D scatter 
-    # plot and returns the appropriate hover information. When a data point is hovered 
-    # over, the callback extracts the point's index and image from the input images array, 
-    # converts the image to a base64 encoded string using the np_image_to_base64 helper 
-    # function, and returns a html.Div containing the image and the category label of 
-    # the hovered data point.
-    @app.callback(
-        Output("graph-tooltip-5", "show"),
-        Output("graph-tooltip-5", "bbox"),
-        Output("graph-tooltip-5", "children"),
-        Input("graph-5", "hoverData"),
-    )
-    def display_hover(hoverData):
-        if hoverData is None:
-            return False, no_update, no_update
-
-        # demo only shows the first point, but other points may also be available
-        hover_data = hoverData["points"][0]
-        bbox = hover_data["bbox"]
-        num = hover_data["pointNumber"]
-
-        im_matrix = images[num]
-        im_url = np_image_to_base64(im_matrix)
-        children = [
-            html.Div([
-                html.Img(
-                    src=im_url, style={"width": "100%"},
-                ),
-                html.P(hue + ": " + str(labels[num]), style={'font-weight': 'bold'}),
-                html.P(additional_info + ": " + str(add_info[num]), style={'font-weight': 'bold'})
-            ], style={'width': f'{image_size}px', 'white-space': 'normal'})
-        ]
-
-        return True, bbox, children
-
-    return app
-
-# Definition of a nested helper function np_image_to_base64 that converts numpy 
-# arrays of images into base64 encoded strings for display in HTML.
-def np_image_to_base64(im_matrix):
-    im = Image.fromarray(im_matrix)
-    buffer = io.BytesIO()
-    im.save(buffer, format="jpeg")
-    encoded_image = base64.b64encode(buffer.getvalue()).decode()
-    im_url = "data:image/jpeg;base64, " + encoded_image
-    return im_url
+#%%
+pca
+#%%
+fig = px.scatter(x=[0, 1, 2, 3, 4], y=[0, 1, 4, 9, 16])
+fig.show()
 
 
 #%%
-pca = pca.reset_index().rename(columns = {"index":"label"})
-#
-#colors = [color_map[mapping[label]] for label in labels]
+pca_fixed = pca.copy()
+pca_fixed['label'] = pca_fixed['label'].astype(str)
+#%%
+import anndata as ad
+#%%
+from vaery_unsupervised.plotting_utils import *
 
 #%%
-app = get_dash_app_2D_scatter_hover_images(pca, hue = "label",images = all_reconstruction, plot_keys = ["pc1", "pc2", "pc3"])
-# %%
-app.run(
-    port=6009,
-    mode='external'  # Opens in new browser tab
+metadata_batch1 = pd.DataFrame(metadata.obs)
+
+#%%
+tsne_z["trajectory"] = tsne_z["trajectory"].astype("str").fillna("NaN")
+#%%
+images_converted = (
+    np.moveaxis(
+        all_reconstruction/np.max(all_reconstruction, axis = (0,2,3))[np.newaxis,:,np.newaxis,np.newaxis], 1,-1) *255
+    ).astype("uint8")
+
+images_converted = (
+    np.moveaxis(all_input, 1,-1)).astype("uint8")
+
+#%%
+app = get_dash_app_3D_scatter_hover_images(
+    umap_z, 
+    hue="patient_id", 
+    images=images_converted, 
+    plot_keys=["umap1", "umap2", "umap3"]
 )
+
+
+
 # %%
-import seaborn as sns
-sns.scatterplot(pca, x = "pc1", y = "pc2", hue = "label")
+import webbrowser
+import threading
+import time
+
+def open_browser():
+    time.sleep(1.5)  # Wait for server to start
+    webbrowser.open_new('http://127.0.0.1:8050/')
+
+# Start browser in a separate thread
+threading.Thread(target=open_browser).start()
+
+app.run(port=8050)
+# %%
+
 # %%

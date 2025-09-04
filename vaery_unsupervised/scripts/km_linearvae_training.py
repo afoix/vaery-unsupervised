@@ -57,7 +57,7 @@ lightning_module = SpatProtoZarrDataModule(
     transform_both=transform_both,
     transform_input=transform_input,
     num_workers=8,
-    batch_size=16,
+    batch_size=32,
 )
 lightning_module.setup("train")
 
@@ -68,11 +68,11 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "linear_VAE_fixedfinallinear_attempt4"
+model_name = "linear_VAE_latentsize_512_nucmembetc"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
-spatialmodel = SpatialVAE_Linear(n_chan=2,latent_size=128, lr = 0.0001, beta = 1e-15, latentspace_dir = latentspace_path, channels_selection = [2,3])
+spatialmodel = SpatialVAE_Linear(n_chan=3,latent_size= 512, lr = 0.000001, beta = 1e-15, latentspace_dir = latentspace_path, channels_selection = [1,2,3])
 
 
 #%%
@@ -85,11 +85,11 @@ logger = TensorBoardLogger(save_dir=logging_path, name = model_name)
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(
-        max_epochs = 600, 
+        max_epochs = 800, 
         accelerator = "gpu", 
        # precision = "16-mixed", 
         logger=logger,
-        callbacks=[ModelCheckpoint(save_last=True,save_top_k=8,monitor='val/loss',every_n_epochs=1),],
+        callbacks=[ModelCheckpoint(save_last=True,save_top_k=20,monitor='val/loss',every_n_epochs=1),],
         log_every_n_steps=5
     )
     #callback = Callback.on_save_checkpoint(trainer = trainer, pl_module = lightning_module, checkpoint = )
@@ -105,3 +105,5 @@ def main(*args, **kwargs):
 if __name__ == "__main__":
    main()
 
+
+# %%

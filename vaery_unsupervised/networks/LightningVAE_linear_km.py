@@ -2,6 +2,9 @@ import torch
 from lightning import LightningModule
 import numpy as np
 from .km_ryan_linearresnet import ResNet18Enc, ResNet18Dec
+from  sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import pandas as pd
 
 def model_loss(x, recon_x, z_mean, z_log_var, beta = 1e-3):
   mse = torch.nn.functional.mse_loss(x, recon_x)
@@ -71,10 +74,41 @@ class SpatialVAE_Linear(LightningModule):
         filename = f"{self.latentspace_dir}/z_val_epoch_{epoch}.npy"
         np.save(filename, z.clone().detach().cpu().numpy())
         print(f"Saved validation latent codes for epoch {epoch} from batch {batch_idx}")
+        image_ids = batch["metadata"]["well_id"]
+    
+        # Debug the original shapes
+        print(f"Original x_hat shape: {x_hat.shape}")
+        print(f"Original target shape: {target.shape}")
+        
+        # Convert to 3 channels if needed
+        if x_hat.shape[1] != 3:
+            if x_hat.shape[1] == 1:  # Grayscale
+                x_hat_rgb = x_hat.repeat(1, 3, 1, 1)
+                target_rgb = target.repeat(1, 3, 1, 1)
+            elif x_hat.shape[1] == 2:  # Two channels
+                zeros = torch.zeros_like(x_hat[:, :1])
+                x_hat_rgb = torch.cat([x_hat, zeros], dim=1)
+                target_rgb = torch.cat([target, zeros], dim=1)
+            else:
+                # More than 3 channels - take first 3
+                x_hat_rgb = x_hat[:, :3]
+                target_rgb = target[:, :3]
+        else:
+            x_hat_rgb = x_hat
+            target_rgb = target
+        
+        # Stack horizontally
+        stacked_imgs = x_hat_rgb
+        #stacked_imgs = torch.cat([x_hat_rgb, target_rgb], dim=-1)
+        
+        # Move to CPU
+        z_cpu = z.detach().cpu()
+        stacked_imgs_cpu = stacked_imgs.detach().cpu()
 
         tensorboard = self.logger.experiment
-        tensorboard.add_image("val/target", target[0].detach().cpu().numpy(), self.current_epoch)
-        tensorboard.add_image("val/reconstruction", x_hat[0].detach().cpu().numpy(), self.current_epoch)
+        tensorboard.add_image("val/target", target[0], self.current_epoch)
+        tensorboard.add_image("val/reconstruction", x_hat[0], self.current_epoch)
+        tensorboard.add_embedding(z_cpu, image_ids, stacked_imgs_cpu, global_step=self.current_epoch, tag = "embedding")
 
     
 
