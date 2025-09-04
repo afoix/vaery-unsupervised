@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import random
 
 from vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule, MarlinDataset
-
+from vaery_unsupervised.networks.marlin_resnet import SmallObjectResNet10Encoder
 from vaery_unsupervised.networks.marlin_contrastive import ResNetEncoder, ContrastiveModule
 
 from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
@@ -22,6 +22,9 @@ from monai.transforms import (
     Compose,
     NormalizeIntensity,
     RandFlipd,
+    RandGaussianNoised,
+    RandGaussianSharpen,
+    RandGaussianSmoothd
 )
 
 # MEAN_OVER_DATASET = 13
@@ -35,15 +38,29 @@ transforms = Compose([
     #     channel_wise=False,
     #     dtype = np.float32,
     # ),
-    RandFlipd(
+    # RandFlipd(
+    #     keys=["positive"],
+    #     spatial_axis=0,
+    #     prob=1,
+    # ),
+    # RandFlipd(
+    #     keys=["positive"],
+    #     spatial_axis=1,
+    #     prob=1,
+    # ),
+    # RandGaussianNoised(
+    #     keys=["positive"],
+    #     prob=1,
+    #     mean=0,
+    #     std=0.5,
+    #     sample_std=True,
+    # ),
+
+    RandGaussianSmoothd(
         keys=["positive"],
-        spatial_axis=0,
-        prob=1,
-    ),
-    RandFlipd(
-        keys=["positive"],
-        spatial_axis=1,
-        prob=1,
+        sigma_x=(0.5, 1.5),
+        sigma_y=(0.5, 1.5),
+        prob=1
     )
 ])
 # transforms=None
@@ -73,27 +90,8 @@ data_module = MarlinDataModule(
 data_module._prepare_data()
 data_module.setup(stage='fit')
 #%%
-data_module.metadata
-#%%
-data_module.train_dataset[0]
-# import matplotlib.pyplot as plt
-# batch_sample['anchor'].shape
-#%%
-plt.hist(batch_sample['anchor'].numpy().flatten(), bins=50)
-print(np.mean(batch_sample['anchor'].numpy()))
-print(np.std(batch_sample['anchor'].numpy()))
-#%%
-fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-fig.patch.set_facecolor('black')
-# ax[0].set("off")
-# ax[1].set("off")
-ax[0].imshow(batch_sample['anchor'].numpy()[0, 0][:,65:85], cmap='gray')
-ax[1].imshow(batch_sample['positive'].numpy()[0, 0][:,65:85], cmap='gray')
-
-
-#%%
-plt.hist(batch_sample['positive'].numpy()[0, 0], bins=50)
-#%%
+# data_module.metadata
+# data_module.train_dataset[0]
 dataloader = data_module.train_dataloader()
 # batch_sample = next(iter(dataloader))
 # print(batch_sample['anchor'].shape)
@@ -105,21 +103,20 @@ for batch in dataloader:
     ax[0].imshow(batch['anchor'].numpy()[0, 0], cmap='gray')
     ax[1].imshow(batch['positive'].numpy()[0, 0], cmap='gray')
     # Pause for 2 seconds
-    plt.show()
+    plt.show()  
     time.sleep(1)
     plt.close()
 #%%
-marlin_encoder_config = {
-    "backbone": "resnet18",
-    "in_channels": 1,
-    "spatial_dims": 2,
-    "embedding_dim": 512,
-    "mlp_hidden_dims": 768,
-    "projection_dim": 128,
-    "pretrained": False,
-}
-
-marlin_encoder = ResNetEncoder(**marlin_encoder_config)
+marlin_encoder = SmallObjectResNet10Encoder(
+        in_channels=1,
+        widths=(32, 64, 128, 256),   # slim to reduce overfitting
+        feature_stage="layer4",      # use "layer3" if you want even fewer params
+        layer4_dilate=3,             # captures long rods without further downsampling
+        norm="group", gn_groups=8,   # better than BN for small batches
+        drop_path_rate=0.05,         # mild stochastic depth
+        mlp_hidden_dims=512,         # set = embedding_dim if you prefer
+        projection_dim=128,
+    )
 
 #%%
 marlin_contrastive_config = {
@@ -130,7 +127,7 @@ marlin_contrastive_config = {
 
 marlin_contrastive = ContrastiveModule(**marlin_contrastive_config)
 #%%
-marlin_contrastive(batch_sample['anchor'], batch_sample['positive'])
+marlin_contrastive(batch['anchor'])
 
 
 #%%

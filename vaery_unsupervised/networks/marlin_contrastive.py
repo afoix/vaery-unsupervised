@@ -135,7 +135,8 @@ class ContrastiveModule(LightningModule):
         return self.encoder(x)
     
     def on_train_start(self):
-        _logger.debug(f"Training started with {self.encoder.backbone} backbone")
+        # _logger.debug(f"Training started with {self.encoder.backbone} backbone")
+        _logger.debug(f"Training started with {self.encoder} backbone")
         super().on_train_start()
 
         # 
@@ -151,7 +152,8 @@ class ContrastiveModule(LightningModule):
             self.logger.log_hyperparams(hparams)
             
     def on_validation_start(self):
-        _logger.debug(f"Validation started with {self.encoder.backbone} backbone")
+        # _logger.debug(f"Validation started with {self.encoder.backbone} backbone")
+        _logger.debug(f"Validation started with {self.encoder} backbone")
         super().on_validation_start()
 
     def training_step(
@@ -218,11 +220,11 @@ class ContrastiveModule(LightningModule):
         return anchor_emb, anchor_proj
 
     def on_validation_epoch_end(self):
-        _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
+        # _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
         super().on_validation_epoch_end()
 
     def on_training_epoch_end(self):
-        _logger.debug(f"Training epoch ended with {self.encoder.backbone} backbone")
+        # _logger.debug(f"Training epoch ended with {self.encoder.backbone} backbone")
         super().on_training_epoch_end()
 
     def _log_metrics(

@@ -93,7 +93,8 @@ model.eval()
 
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
 METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
+# METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
+METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle'
 #Adjust Metadata
 # metadata = pd.read_pickle(HEADPATH/'2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
 # metadata_compact = (metadata
@@ -106,7 +107,7 @@ data_module = MarlinDataModule(
     data_path=HEADPATH/'Ecoli_lDE20_Exps-0-1/',
     metadata_path=METADATA_COMPACT_PATH,
     split_ratio=0.8,
-    batch_size=256,#64,
+    batch_size=1024,#64,
     num_workers=4,
     prefetch_factor=2,
     transforms=transforms,
@@ -138,8 +139,14 @@ embeddings = trainer.predict(
     dataloaders=data_module.predict_dataloader(),
     return_predictions=True
 )
-#%%
 
+#%% Export embeddings
+import pickle
+
+with open(HEADPATH/"embeddings_4gene_allt_v1.pkl", "wb") as f:
+    pickle.dump(embeddings, f)
+
+#%%
 #Get projection matrix
 projection_matrix = np.zeros((len(data_module.dataset.metadata), embeddings[0][1].shape[1]))
 
@@ -152,6 +159,7 @@ for batch in embeddings:
 
 #%%
 from sklearn.decomposition import PCA
+
 # Perform PCA
 pca = PCA(n_components=3)
 pcs = pca.fit_transform(projection_matrix)
@@ -179,3 +187,50 @@ cbar = plt.colorbar(scatter, ticks=range(len(metadata['gene_id'].unique())))
 cbar.ax.set_yticklabels(metadata['gene_id'].astype('category').cat.categories)
 plt.show()
 #%%
+from sklearn.manifold import TSNE
+
+N = 2000  # Number of elements to use for tSNE
+subset_indices = np.random.choice(projection_matrix.shape[0], N, replace=False)
+projection_subset = projection_matrix[subset_indices]
+metadata_subset = metadata.iloc[subset_indices]
+
+# Perform tSNE
+tsne = TSNE(n_components=2, random_state=42, perplexity=50)#, n_iter=1000)
+tsne_results = tsne.fit_transform(projection_subset)
+
+print("tSNE results shape:", tsne_results.shape)
+#%%
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    tsne_results[:, 0], tsne_results[:, 1],
+    c=metadata_subset['gene_id'].astype('category').cat.codes,
+    cmap='tab10',
+    alpha=0.8
+)
+plt.xlabel('tSNE-1')
+plt.ylabel('tSNE-2')
+plt.title(f'tSNE Projection (N={N})')
+plt.grid(True)
+cbar = plt.colorbar(scatter, ticks=range(len(metadata_subset['gene_id'].unique())))
+cbar.ax.set_yticklabels(metadata_subset['gene_id'].astype('category').cat.categories)
+plt.show()
+
+#%%
+metadata_complete = pd.read_pickle(METADATA_COMPACT_PATH)
+metadata_complete[metadata_complete['gene_id'].isin(metadata['gene_id'].unique())].groupby('gene_id').first()
+
+#%%
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(
+    tsne_results[:, 0], tsne_results[:, 1],
+    c=metadata_subset['timepoints'],
+    cmap='jet',
+    alpha=0.8
+)
+plt.xlabel('tSNE-1')
+plt.ylabel('tSNE-2')
+plt.title(f'tSNE Projection Colored by Timepoint (N={N})')
+plt.grid(True)
+cbar = plt.colorbar(scatter)
+cbar.set_label('Timepoint')
+plt.show()

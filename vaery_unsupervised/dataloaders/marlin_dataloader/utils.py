@@ -149,7 +149,7 @@ metadata_filt
 for gene_id in metadata_lookup.keys():
     metadata_lookup[gene_id]['oDEPool_ids']
 #%%
-metadata = pd.read_pickle(METADATA_FILENAME).groupby('gene_grna_trench_index').last().reset_index()
+metadata = pd.read_pickle(METADATA_FILENAME)#.groupby('gene_grna_trench_index').last().reset_index()
 #%%
 gene = 'ftsN'
 print(metadata[metadata['Gene']==gene]['oDEPool7_id'].unique())
@@ -195,9 +195,10 @@ metadata_grnas_to_keep = (metadata
     .reset_index(drop=True)
     # Assign new gene
 )
-metadata_grnas_to_keep.to_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_lastT.pickle')
+metadata_grnas_to_keep.to_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle')
 #%% Reproduce sampling
-metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_lastT.pickle')
+metadata_grnas_to_keep = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle')
+metadata_grnas_to_keep.groupby('Gene').apply(len)/60
 #%%
 
 def find_image_in_hdf5_file(

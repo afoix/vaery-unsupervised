@@ -76,8 +76,8 @@ def find_images_anchor_pos_in_hdf5_file(hdf5_headpath,
 ):
     filename = hdf5_headpath / f"{gene_id}/{grna_id}.hdf5"
     with h5py.File(filename, 'r') as f:
-        img_pos = f[KEY_FL][grna_file_trench_index, timepoint]
-        img_anc = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T]
+        img_pos = f[KEY_FL][grna_file_trench_index, timepoint,:,5:15]
+        img_anc = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T,:,5:15]
         
     return img_anc, img_pos
 
