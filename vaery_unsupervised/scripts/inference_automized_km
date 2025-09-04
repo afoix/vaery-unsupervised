@@ -1,0 +1,239 @@
+#%%
+import numpy as np
+from pathlib import Path
+from vaery_unsupervised.dataloaders.dataloader_km_ryans_template import (
+    simple_masking, 
+    DATASET_NORM_DICT, 
+    SpatProteoDatasetZarr,
+    SpatProtoZarrDataModule,
+)
+from vaery_unsupervised.networks.LightningVAE_linear_km import SpatialVAE_Linear
+from vaery_unsupervised.networks.km_ryan_linearresnet import (ResNet18Dec, ResNet18Enc)
+import yaml
+from vaery_unsupervised.km_utils import plot_batch_sample,plot_dataloader_output
+import monai.transforms as transforms
+import lightning
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.loggers import TensorBoardLogger
+from pathlib import Path
+import torch
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+import anndata as ad
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from umap.umap_ import UMAP
+from pathlib import Path
+from vaery_unsupervised.plotting_utils import *
+from sklearn.decomposition import PCA
+import webbrowser
+import threading
+import time
+
+
+#%%
+
+
+#%%
+from vaery_unsupervised.networks.LightningVAE_linear_km import reparameterize
+
+#datamodule
+#model
+#checkpointpath
+dataset_path = Path("/mnt/efs/aimbl_2025/student_data/S-KM/")
+
+dataset_zarr = SpatProteoDatasetZarr(
+    dataset_path/"converted_crops_with_metadata.zarr",
+    masking_function=simple_masking,
+    dataset_normalisation_dict=DATASET_NORM_DICT,
+    transform_both=None,
+    transform_input=None
+)
+
+lightning_module = SpatProtoZarrDataModule(
+    dataset_path/"converted_crops_with_metadata.zarr",
+    masking_function=simple_masking,
+    dataset_normalisation_dict=DATASET_NORM_DICT,
+    transform_both=None,
+    transform_input=None,
+    num_workers=8,
+    batch_size=16,
+)
+
+lightning_module.setup("predict")
+
+loader = lightning_module.predict_dataloader()
+
+
+
+def visualization(model_class = SpatialVAE_Linear, 
+                  checkpointpath = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_latentsize_512/version_0/checkpoints/epoch=97-step=4214.ckpt",
+                  visualization = True, 
+                  df_scale = False,
+                  n_components = 3,
+                  pca=True,
+                  tsne=False,
+                  umap = False,
+                  plot_keys_umap = ["pc1", "pc2"],
+                  figshow = True,
+                  dash2d = True,
+                  dash3d = False,
+                  hue_column = None,
+                  dim_reduction_dash = "pca"
+                  ):
+    model = model_class.load_from_checkpoint(checkpointpath)
+
+    model.eval()
+
+    all_image_ids = []
+    all_input = []
+    all_reconstruction = []
+    all_z_mean = []
+    all_z_log_var = []
+    all_z = []
+    dim_red_dict = {}
+
+    for batch_idx, batch in enumerate(loader):
+        if batch_idx == 0:
+            plot_batch_sample(batch)
+
+        image_ids = batch["metadata"]['well_id']
+        input = batch["input"][:,model.channels_selection,:,:].to(device = model.device)
+        reconstruction, z_mean, z_log_var = model(input)  
+        z = reparameterize(z_mean, z_log_var)
+
+        all_image_ids.append(image_ids) 
+        all_input.append(input.detach().cpu())
+        all_reconstruction.append(reconstruction.detach().cpu())
+        all_z_mean.append(z_mean.detach().cpu())
+        all_z_log_var.append(z_log_var.detach().cpu())
+        all_z.append(z.detach().cpu())
+
+    all_image_ids = np.concatenate(all_image_ids, axis = 0) 
+    all_input = torch.cat(all_input, dim = 0).numpy()
+    all_reconstruction = torch.cat(all_reconstruction, dim = 0).numpy() 
+    all_z_mean = torch.cat(all_z_mean, dim = 0).numpy() 
+    all_z_log_var = torch.cat(all_z_log_var, dim = 0).numpy() 
+    all_z = torch.cat(all_z, dim = 0).numpy()
+
+
+    #visualization
+    if visualization:
+        df_unscaled = pd.DataFrame(data = all_z, index=all_image_ids, columns = np.arange(1,all_z.shape[1]+1))
+        scaler = StandardScaler()
+        df_z_scaled = scaler.fit_transform(df_unscaled)
+
+        if df_scale:
+            df_z = df_z_scaled
+        else:
+            df_z = df_unscaled
+        
+
+        if umap:
+            umap_z = UMAP(n_neighbors = 15, n_components=n_components).fit_transform(df_z)
+            umap_z = pd.DataFrame(umap_z, index = all_image_ids)
+            umap_z_columnnames = [f'umap{i}' for i in np.arange(1,umap_z.shape[1]+1)]
+            umap_z.columns = umap_z_columnnames
+            umap_z = umap_z.reset_index().rename(columns = {"index":"plate_id"})
+            dim_red_dict["umap"] = umap_z
+            umap = plt.scatter(x = umap_z["umap1"], y = umap_z["umap2"])
+            if figshow:
+                plt.title("umap")
+                plt.xlabel("umap1")
+                plt.xlabel("umap2")
+                plt.show(umap)
+
+        if pca:
+            pca_z = PCA(n_components=3).fit_transform(df_z, y=None)
+            pca_z = pd.DataFrame(pca_z, index=all_image_ids)
+            pca_z_columnnames = [f'pc{i}' for i in np.arange(1,pca_z.shape[1]+1)]
+            pca_z.columns = pca_z_columnnames
+            pca_z = pca_z.reset_index().rename(columns = {"index":"plate_id"})
+            dim_red_dict["pca"] = pca_z
+            pca = plt.scatter(x = pca_z["pc1"], y = pca_z["pc2"])
+            if figshow:
+                plt.title("pca")
+                plt.xlabel("pc1")
+                plt.xlabel("pc2")
+                plt.show(pca)
+
+        if tsne:
+            tsne_z = TSNE(n_components=3).fit_transform(df_z, y=None)
+            tsne_z = pd.DataFrame(tsne_z, index=all_image_ids)
+            tsne_z_columnnames = [f'tsne{i}' for i in np.arange(1,tsne_z.shape[1]+1)]
+            tsne_z.columns = tsne_z_columnnames
+            tsne_z = tsne_z.reset_index().rename(columns = {"index":"plate_id"})
+            dim_red_dict["tsne"] = tsne_z
+            tsne = plt.scatter(x = tsne_z["tsne1"], y = tsne_z["tsne2"])
+            if figshow:
+                plt.title("tsne")
+                plt.xlabel("tsne1")
+                plt.xlabel("tsne2")
+                plt.show(tsne)
+            
+        reconstruction_converted = (np.moveaxis(all_reconstruction/np.max(all_reconstruction, axis = (0,2,3))[np.newaxis,:,np.newaxis,np.newaxis], 1,-1) *255
+                ).astype("uint8")
+
+        images_converted = (np.moveaxis(all_input, 1,-1)).astype("uint8")
+        
+            
+        if dash2d:
+            dash_embeddings = dim_red_dict[dim_reduction_dash]
+            if hue_column is None:
+                dash_embeddings["default"] = np.zeros(len(dash_embeddings))
+                hue_column = "default"
+            app = get_dash_app_2D_scatter_hover_images(
+                dash_embeddings, 
+                hue=hue_column, 
+                images=images_converted, 
+                plot_keys=plot_keys_umap
+            )
+
+        if dash3d:
+            dash_embeddings = dim_red_dict[dim_reduction_dash]
+            if hue_column is None:
+                dash_embeddings["default"] = np.zeros(len(dash_embeddings))
+                hue_column = "default"
+            app = get_dash_app_3D_scatter_hover_images(
+                dash_embeddings, 
+                hue=hue_column, 
+                images=images_converted, 
+                plot_keys=plot_keys_umap
+            )
+
+
+    
+    return app, df_z, all_reconstruction, all_input, all_image_ids, pca, tsne, umap
+
+
+
+    #%%
+app, df_z, all_reconstruction, all_input, all_image_ids, pca, _, umap = visualization(
+                            model_class = SpatialVAE_Linear, 
+                            checkpointpath = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_latentsize_512/version_0/checkpoints/epoch=97-step=4214.ckpt",
+                            visualization = True, 
+                            df_scale = False,
+                            n_components = 3,
+                            pca=True,
+                            tsne=False,
+                            umap = True,
+                            plot_keys_umap = ["pc1", "pc2"],
+                            figshow = True,
+                            dash2d = True,
+                            dash3d = False,
+                            hue_column = None,
+                            dim_reduction_dash = "pca"
+                            )
+
+#%%
+def open_browser():
+    time.sleep(1.5)  # Wait for server to start
+    webbrowser.open_new('http://127.0.0.1:6050/')
+
+# Start browser in a separate thread
+threading.Thread(target=open_browser).start()
+
+app.run(port=6050)
+# %%

@@ -108,7 +108,7 @@ class SpatialVAE_Linear(LightningModule):
         tensorboard = self.logger.experiment
         tensorboard.add_image("val/target", target[0], self.current_epoch)
         tensorboard.add_image("val/reconstruction", x_hat[0], self.current_epoch)
-        tensorboard.add_embedding(z_cpu, image_ids, stacked_imgs_cpu, global_step=self.current_epoch, tag = "embedding")
+        tensorboard.add_embedding(z_cpu, image_ids, stacked_imgs_cpu, global_step=epoch, tag = "embedding")
 
     
 
