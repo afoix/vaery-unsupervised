@@ -119,17 +119,18 @@ class MicroSplitHCSInferenceDataset(Dataset):
         if np.isnan(multi_ch_img).any():
             multi_ch_img = np.nan_to_num(multi_ch_img, nan=0.0, posinf=1.0, neginf=0.0)
 
-        # convert to tensor
-        multi_ch_img = torch.from_numpy(multi_ch_img).float()
-
         # crop image in a grid of overlapping patches
         multi_ch_patches, coords = extract_overlapping_patches_grid(
-            img=multi_ch_img.numpy(),
+            img=multi_ch_img,
             patch_size=self.crop_size,
-            overlap=(self.crop_size[0] // 2, self.crop_size[1] // 2)
+            overlap=(self.crop_size[0] // 4, self.crop_size[1] // 4)
         )
-        patches_info = {"coords": coords, "idx": index}
+        patches_info = {"coords": coords, "idx": [index] * len(coords)}
 
+        # convert to tensor
+        multi_ch_img = torch.from_numpy(multi_ch_img).float()
+        multi_ch_patches = torch.from_numpy(multi_ch_patches).float()
+        
         # get superimposed image
         mixed_patches = torch.mean(multi_ch_patches, dim=1, keepdim=True)
 
@@ -210,12 +211,16 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
     def test_data_collate_fn(self, batch):
         # Flatten patches across the batch
         input_patches = torch.cat([item[0] for item in batch], dim=0)  # [B*N, C, H, W]
-        target_patches = torch.cat([item[1] for item in batch], dim=0)  # [B*N, C, H, W]
+        target_patches = torch.stack([item[1] for item in batch], dim=0)  # [B*N, C, H, W]
 
         # Flatten coords in the same order
         p_info = []
         for item in batch:
-            p_info.extend(item[2])
+            for i in range(len(item[2]['coords'])):
+                p_info.append({
+                    'coords': item[2]['coords'][i],
+                    'idx': item[2]['idx'][i]
+                })
         
         return input_patches, target_patches, p_info
 
@@ -238,7 +243,7 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
-            batch_size=1, 
+            batch_size=1,
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=self.test_data_collate_fn

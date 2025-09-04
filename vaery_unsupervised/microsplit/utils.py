@@ -299,7 +299,7 @@ def get_MicroSplit_predictions(
         unmixed_tiles_list: list[NDArray] = []
         unmixed_stds_list: list[NDArray] = []
         for batch in tqdm(dloader, desc="Predicting batches"):
-            inps, tinfos = batch
+            inps, _, tinfos = batch
             inps = inps.cuda()
 
             # --- get samples for MMSE estimation
@@ -320,8 +320,8 @@ def get_MicroSplit_predictions(
 
             # --- append to lists
             tiles_info.extend(tinfos)
-            unmixed_tiles_list.append(unmixed_mmse_preds)
-            unmixed_stds_list.append(unmixed_mmse_stds)
+            unmixed_tiles_list.extend(unmixed_mmse_preds)
+            unmixed_stds_list.extend(unmixed_mmse_stds)
 
     # stitch tiles into full images for each of the lists
     unmixed_imgs = stitch_tiles(

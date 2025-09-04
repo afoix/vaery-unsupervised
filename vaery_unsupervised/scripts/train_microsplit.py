@@ -2,6 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 
+import torch
 import matplotlib.pyplot as plt
 from careamics.lightning import VAEModule
 from pytorch_lightning import Trainer
@@ -149,15 +150,21 @@ trainer.fit(
 )
 
 #%%
+# Or load previous checkpoints
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs/MicroSplit_2025-09-04_13/version_0/checkpoints/last.ckpt"
+ckpt = torch.load(ckpt_path, map_location="cuda")
+model.load_state_dict(ckpt['state_dict'], strict=True)
+model.to("cuda")
+
+#%%
 # Evaluate model on test dataset
 unmixed_predictions, unmixed_stds = get_MicroSplit_predictions(
     model=model,
     dloader=data_module.test_dataloader(),
-    mmse_count=5
+    mmse_count=2
 )
 
-
-# #%%
+#%%
 # Visualize predictions
 # get the target and input from the test dataset for visualization purposes
 inputs = []
@@ -168,12 +175,24 @@ for batch in data_module.test_dataloader():
     patch_info = batch[2]
     stitched_input = stitch_tiles(input_patches, patch_info)
     inputs.append(stitched_input)
+    
+    
+#%%
+plt.imshow(inputs[0][0][0], cmap='gray')
+
+
+#%%
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
+axes[0].imshow(targets[0][0][0], cmap='gray')
+axes[1].imshow(targets[0][0][1], cmap='gray')
+axes[2].imshow(targets[0][0][2], cmap='gray')
+
 
 #%%
 full_frame_evaluation(
-    inp=inputs[0],
-    tar=targets[0],
-    stitched_predictions=unmixed_predictions[0],
+    inp=inputs[0][0],
+    tar=targets[0][0],
+    stitched_predictions=unmixed_predictions[0][0],
 )
 
 
