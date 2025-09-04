@@ -6,6 +6,7 @@ from typing import List, Tuple, Union
 import lightning as L
 import numpy as np
 from iohub import open_ome_zarr
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 
@@ -39,16 +40,10 @@ class SalBrainDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.patch_size = patch_size
 
-        # self.transformations = Compose([
-        #     Normalize(mean=[0.0], std=[1.0])
-        # ])
-        #self.augmentations = augmentations
-
         self.pin_memory = pin_memory
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
-        #self.dataset = SalBrainDataset(self.data_path, self.patch_size)
         _logger.debug('Pritining debug')
 
     def setup(self, stage: str):
@@ -69,7 +64,11 @@ class SalBrainDataModule(L.LightningDataModule):
                                            #transformations=self.transformations)
             self.channel_names = self.dataset.channel_names
         elif stage == "predict":
-            raise NotImplementedError("Predict stage not implemented yet.")
+            self.dataset = SalBrainDataset(self.data_path, 
+                                           self.batch_size, 
+                                           self.patch_size) 
+                                           #transformations=self.transformations)
+            self.channel_names = self.dataset.channel_names
         else:
             raise ValueError("Stage must be fit/train, val/validate, or predict.")
         
@@ -85,6 +84,15 @@ class SalBrainDataModule(L.LightningDataModule):
     
     def validation_dataloader(self):
         return DataLoader(self.dataset, 
+                          shuffle=False, 
+                          batch_size=self.batch_size, 
+                          num_workers=self.num_workers, 
+                          pin_memory=self.pin_memory,
+                          prefetch_factor=self.prefetch_factor,
+                          persistent_workers=self.persistent_workers)
+
+    def predict_dataloader(self):
+        DataLoader(self.dataset, 
                           shuffle=False, 
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
@@ -159,9 +167,14 @@ class SalBrainDataset(Dataset):
         std = np.where(std == 0, 1, std)
 
 
-        vol = (vol - mean) / std
+        # sample = {"vol": Tensor((vol - mean) / std), 
+        #           "vol_index": Tensor(self.indices[index])}
+        sample = (vol - mean)/std
+        assert any(std != 0.0), "One of the channels has std == 0, avoiding div by zero"
+        #assert any()
+        return Tensor(sample)
 
-        return vol
+        #return sample
 
 
 def get_bounding_box(brainary_mask: np.array, pad: int=0) -> Tuple:

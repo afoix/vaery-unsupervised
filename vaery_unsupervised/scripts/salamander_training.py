@@ -8,7 +8,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from vaery_unsupervised.dataloaders.sal_brain_loader import SalBrainDataModule
 from vaery_unsupervised.networks.SalamanderVAE import SalamanderVAE
 
-seed_everything(57)
+seed_everything(1010)
 
 
 def main():
@@ -53,7 +53,10 @@ def main():
         ],
     )
 
-    trainer.fit(model=model, train_dataloaders=train_data, val_dataloaders=val_data)
+    trainer.fit(model=model, 
+                train_dataloaders=train_data, 
+                val_dataloaders=val_data, 
+                ckpt_path=f"/home/jnc2161/mbl/logs/{model_name}/version_0/checkpoints/epoch=4-step=250.ckpt")
 
 
 if __name__ == "__main__":

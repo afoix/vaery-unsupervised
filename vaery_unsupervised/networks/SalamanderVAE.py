@@ -27,39 +27,39 @@ def reparameterize(mean, log_var):
     return mean + epsilon * std
 
 
-def render_images(
-    imgs: Sequence[Sequence[np.ndarray]], cmaps: list[str] = []
-) -> np.ndarray:
-    """Render images in a grid.
+# def render_images(
+#     imgs: Sequence[Sequence[np.ndarray]], cmaps: list[str] = []
+# ) -> np.ndarray:
+#     """Render images in a grid.
 
-    Parameters
-    ----------
-    imgs : Sequence[Sequence[np.ndarray]]
-        Grid of images to render, output of `detach_sample`.
-    cmaps : list[str], optional
-        Colormaps for each column, by default []
+#     Parameters
+#     ----------
+#     imgs : Sequence[Sequence[np.ndarray]]
+#         Grid of images to render, output of `detach_sample`.
+#     cmaps : list[str], optional
+#         Colormaps for each column, by default []
 
-    Returns
-    -------
-    np.ndarray
-        Rendered RGB images grid.
-    """
-    images_grid = []
-    for sample_images in imgs:
-        images_row = []
-        for i, image in enumerate(sample_images):
-            if cmaps:
-                cm_name = cmaps[i]
-            else:
-                cm_name = "gray" if i == 0 else "inferno"
-            if image.ndim == 2:
-                image = image[np.newaxis]
-            for channel in image:
-                channel = rescale_intensity(channel, out_range=(0, 1))
-                render = get_cmap(cm_name)(channel, bytes=True)[..., :3]
-                images_row.append(render)
-        images_grid.append(np.concatenate(images_row, axis=1))
-    return np.concatenate(images_grid, axis=0)
+#     Returns
+#     -------
+#     np.ndarray
+#         Rendered RGB images grid.
+#     """
+#     images_grid = []
+#     for sample_images in imgs:
+#         images_row = []
+#         for i, image in enumerate(sample_images):
+#             if cmaps:
+#                 cm_name = cmaps[i]
+#             else:
+#                 cm_name = "gray" if i == 0 else "inferno"
+#             if image.ndim == 2:
+#                 image = image[np.newaxis]
+#             for channel in image:
+#                 channel = rescale_intensity(channel, out_range=(0, 1))
+#                 render = get_cmap(cm_name)(channel, bytes=True)[..., :3]
+#                 images_row.append(render)
+#         images_grid.append(np.concatenate(images_row, axis=1))
+#     return np.concatenate(images_grid, axis=0)
 
 
 class SalamanderVAE(LightningModule):
@@ -106,7 +106,7 @@ class SalamanderVAE(LightningModule):
         self.img_sample = []
         self.x_hat_sample = []
         for b_i in range(0, x.shape[0], 3):
-            self.img_sample.append(batch[b_i].detach())
+            self.img_sample.append(x[b_i].detach())
             self.x_hat_sample.append(x_hat[b_i].detach())
         
         if batch_idx == 0: 
