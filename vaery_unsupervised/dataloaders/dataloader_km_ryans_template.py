@@ -151,6 +151,7 @@ class SpatProteomicsDataset(Dataset):
             crop_size = 128,
             seed=42,
             train:bool=True,
+            per_image_norm = False,
     ):
         super().__init__()
         # adding dataset_specific information
@@ -174,6 +175,7 @@ class SpatProteomicsDataset(Dataset):
         self.crop_size = crop_size
         self.masking_function = masking_function
         self.dataset_normalisation_dict = dataset_normalisation_dict
+        self.per_image_norm = per_image_norm
         # setting transform and train/val split
         self.transform_both = transform_both
         self.transform_input = transform_input
@@ -223,7 +225,11 @@ class SpatProteomicsDataset(Dataset):
         }
         
         start = time.process_time()
-        if self.dataset_normalisation_dict:
+        if self.per_image_norm:
+            image = (
+                image - np.mean(image,axis = (1,2))[:,np.newaxis,np.newaxis]
+            ) / np.std(image,axis=(1,2))[:,np.newaxis,np.newaxis]
+        elif self.dataset_normalisation_dict:
             mean, stddev = self.dataset_normalisation_dict[patient_id_sample]
             image = (
                 image - np.array(mean)[:,np.newaxis,np.newaxis]
@@ -273,6 +279,7 @@ class SpatProteomicDataModule(LightningDataModule):
             num_workers:int,
             crop_size = 128,
             dataset_normalisation_dict = None,
+            per_image_norm = False,
             transform_both: list|None=None,
             transform_input: list|None=None,
             prefetch_factor:int=2,
@@ -283,6 +290,7 @@ class SpatProteomicDataModule(LightningDataModule):
         ):
         super().__init__()
         # adding dataset_specific information
+        self.per_image_norm = per_image_norm
         self.data_paths = data_paths
         self.patient_id_list = patient_id_list
         self.polygon_sdata_name = polygon_sdata_name
@@ -317,6 +325,7 @@ class SpatProteomicDataModule(LightningDataModule):
                 patient_id_list=self.patient_id_list,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm = self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=self.transform_input,
                 transform_both = self.transform_both,
@@ -332,6 +341,7 @@ class SpatProteomicDataModule(LightningDataModule):
                 patient_id_list=self.patient_id_list,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm = self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=None,
                 transform_both = None,
@@ -349,6 +359,7 @@ class SpatProteomicDataModule(LightningDataModule):
                 patient_id_list=self.patient_id_list,
                 masking_function=self.masking_function,
                 dataset_normalisation_dict=self.dataset_normalisation_dict,
+                per_image_norm = self.per_image_norm,
                 crop_size=self.crop_size,
                 transform_input=None,
                 transform_both = None,
