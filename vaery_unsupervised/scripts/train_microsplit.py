@@ -38,10 +38,10 @@ ome_zarr_path = "/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_o
 data_module = MicroSplitHCSDataModule(
     ome_zarr_path=ome_zarr_path,
     source_channel_names=['mito', 'er', 'nuclei'],
-    crop_size=(64, 64),
+    crop_size=(128, 128),
     crops_per_position=4,
     batch_size=32,
-    num_workers=0,
+    num_workers=6,
     split_ratio=0.85,
     augmentations=[
         RandRotate(range_x=[90, 90], prob=0.2),
@@ -78,13 +78,13 @@ plt.show()
 experiment_params = SplittingParameters(
     algorithm="musplit",
     loss_type="musplit", # no denoising
-    img_size=(64, 64), # this should be consistent with the dataset
+    img_size=(128, 128), # this should be consistent with the dataset
     target_channels=len(['mito', 'er', 'nuclei']),
-    multiscale_count=3,
+    multiscale_count=1,
     lr=1e-3,
-    num_epochs=30,
-    lr_scheduler_patience=10,
-    earlystop_patience=20,
+    num_epochs=100,
+    lr_scheduler_patience=25,
+    earlystop_patience=50,
     nm_paths=None, # data is not noise, we don't need explicit noisy models
 ).model_dump()
 
@@ -136,7 +136,7 @@ trainer = Trainer(
     gradient_clip_algorithm=training_config.gradient_clip_algorithm,
     callbacks=[
         ModelCheckpoint(
-            save_last=True, save_top_k=3, monitor='loss/val', every_n_epochs=1
+            save_last=True, save_top_k=3, monitor='val_loss', every_n_epochs=1
         )
     ]
 )

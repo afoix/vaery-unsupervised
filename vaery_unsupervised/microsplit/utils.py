@@ -243,3 +243,34 @@ def full_frame_evaluation(stitched_predictions, tar, inp, same_scale: bool = Tru
 
     ax[1,ncols-1].yaxis.set_label_position("right")
     ax[1,ncols-1].set_ylabel("Predicted", fontsize=15)
+    
+
+def extract_overlapping_patches_grid(
+    img: np.ndarray,              # C x H x W
+    patch_size: tuple[int,int],   # (ph, pw)
+    overlap: tuple[int,int]       # (oh, ow)
+) -> tuple[np.ndarray, list[tuple[int,int,int,int]]]:
+    ph, pw = patch_size
+    oh, ow = overlap
+    sy, sx = ph - oh, pw - ow
+    H, W = img.shape[-2:]
+
+    def starts(L, p, s):
+        xs = list(range(0, max(L - p + 1, 1), s))
+        last = max(0, L - p)      # start index so the patch touches the border
+        if xs[-1] != last:
+            xs.append(last)
+        return xs
+
+    ys = starts(H, ph, sy)
+    xs = starts(W, pw, sx)
+
+    patches: list[np.ndarray] = []
+    coords: list[tuple[int,int,int,int]] = []
+
+    for y in ys:
+        for x in xs:
+            patches.append(img[:, y:y+ph, x:x+pw])
+            coords.append((y, y+ph, x, x+pw))  # (y0,y1,x0,x1) in the original image
+
+    return np.stack(patches), coords
