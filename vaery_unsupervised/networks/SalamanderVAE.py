@@ -14,9 +14,10 @@ _logger = logging.getLogger("lightning.pytorch")
 #_logger.setLevel(logging.DEBUG)
 
 
-def model_loss(x, recon_x, z_mean, z_log_var, beta=1e-3):
+def model_loss(x, recon_x, z_mean, z_log_var, beta=1e-3, clamp_kl=1e12):
     mse = torch.nn.functional.mse_loss(x, recon_x)
     kl_loss = -0.5 * torch.sum(1 + z_log_var - z_mean.pow(2) - z_log_var.exp())
+    kl_loss = torch.clamp(kl_loss, max=clamp_kl)
     loss = mse + beta * kl_loss
     return loss, mse, kl_loss
 

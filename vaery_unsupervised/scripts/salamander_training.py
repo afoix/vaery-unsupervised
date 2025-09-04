@@ -12,9 +12,9 @@ seed_everything(1010)
 
 
 def main():
-    torch.set_float32_matmul_precision("high")
+    #torch.set_float32_matmul_precision("high")
 
-    model_name = "sal_model_v1_z1024_b32_e15_sz64"
+    model_name = "sal_model_v2_z1024_b32_e8_sz64"
 
     dataset = SalBrainDataModule(
         batch_size=32,
@@ -33,7 +33,7 @@ def main():
     print(f"Batch shape: {batch_shape}")
 
     model = SalamanderVAE(
-        beta=1e-15,
+        beta=1e-8,
         matrix_size=batch_shape[3],
         latent_size=1024,
         n_chan=batch_shape[1],
@@ -55,8 +55,8 @@ def main():
 
     trainer.fit(model=model, 
                 train_dataloaders=train_data, 
-                val_dataloaders=val_data, 
-                ckpt_path=f"/home/jnc2161/mbl/logs/{model_name}/version_0/checkpoints/epoch=4-step=250.ckpt")
+                val_dataloaders=val_data) 
+                #ckpt_path=f"/home/jnc2161/mbl/logs/{model_name}/version_0/checkpoints/epoch=4-step=250.ckpt")
 
 
 if __name__ == "__main__":

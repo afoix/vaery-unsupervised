@@ -194,7 +194,7 @@ class ResNet18Dec(nn.Module):
         x = self.layer3(x)
         x = self.layer2(x)
         x = self.layer1(x)
-        x = torch.sigmoid(self.conv1(x))
+        x = torch.tanh(self.conv1(x))
 
         return x
     

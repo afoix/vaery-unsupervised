@@ -63,8 +63,8 @@ class SalBrainDataModule(L.LightningDataModule):
                                            self.patch_size) 
                                            #transformations=self.transformations)
             self.channel_names = self.dataset.channel_names
-        elif stage == "predict":
-            self.dataset = SalBrainDataset(self.data_path, 
+        elif stage == "predict" or stage == "test":
+            self.dataset = SalBrainDatasetForTest(self.data_path, 
                                            self.batch_size, 
                                            self.patch_size) 
                                            #transformations=self.transformations)
@@ -91,7 +91,7 @@ class SalBrainDataModule(L.LightningDataModule):
                           prefetch_factor=self.prefetch_factor,
                           persistent_workers=self.persistent_workers)
 
-    def predict_dataloader(self):
+    def test_dataloader(self):
         DataLoader(self.dataset, 
                           shuffle=False, 
                           batch_size=self.batch_size, 
@@ -127,7 +127,9 @@ class SalBrainDataset(Dataset):
 
         self.data_path = data_path
         self.patch_size = patch_size
-        self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
+        self.include = [0, 2, 3, 11, 18, 19, 41, 50, 63] # neurotransmitter related
+        #self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
+        self.exclude_channels = [c for c in range(68) if c not in self.include]
 
         with open_ome_zarr(
             self.data_path,
@@ -173,6 +175,84 @@ class SalBrainDataset(Dataset):
         assert any(std != 0.0), "One of the channels has std == 0, avoiding div by zero"
         #assert any()
         return Tensor(sample)
+
+        #return sample
+
+
+class SalBrainDatasetForTest(Dataset):
+    """
+    Handles data IO, prepares batches of data, applies transformations
+    Sampling strategy:
+    - Because the task is unsupervised, it might be okay to sample patches randomly from the volume without
+    explicitly seperating training vs validation patches. The changes of getting the exact same patch is low. 
+    Use of mask:
+    - Mask (of brain) will be used to restrict patch sampling. Initially, just define a bounding box. Might want to
+    try a more sophisticated approach where the centers of each patch are sampled from the mask.
+    - What to do about filling the non-brain pixel values? 
+    """
+
+    def __init__(self, 
+                 data_path: str, 
+                 batch_size: int, 
+                 patch_size: Union[List, Tuple], 
+                 mask_channel: int=1,
+                 num_total_samples: int=1600,
+                 #normalizations: List=[], 
+                 #augmentations: List=[], 
+                 ):
+        
+        super().__init__()
+
+        self.data_path = data_path
+        self.patch_size = patch_size
+        self.include = [0, 2, 3, 11, 18, 19, 41, 50, 63] # neurotransmitter related
+        #self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
+        self.exclude_channels = [c for c in range(68) if c not in self.include]
+
+        with open_ome_zarr(
+            self.data_path,
+            mode='r'
+        ) as dataset:
+            self.volume = dataset["0/0/0/0"] # dims is (T, C, Z, Y, X), (1, 68, 530, 1189, 585)
+            self.channel_names = [c for i, c in enumerate(dataset["0/0/0"].channel_names) if i not in self.exclude_channels]
+        self.n_channels = len(self.channel_names)
+        self.mask = self.volume[0, mask_channel].copy().astype(bool)
+        self.bounding_box = get_bounding_box(self.mask)
+        self.volume_shape = self.volume.shape
+        self.num_total_samples = num_total_samples
+
+        self.transformations = v2.Compose([v2.Normalize(mean=[0.0 for i in range(self.n_channels)], 
+                                                  std=[1.0 for i in range(self.n_channels)])])
+        self.indices = random_patch_sampler(self.bounding_box, 
+                                            self.patch_size, 
+                                            num_samples=num_total_samples,  # *100??
+                                            binary_mask=self.mask)
+
+
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, 
+                    index):
+        
+        vol = self.volume[0, 
+                           [c for c in range(self.volume.shape[1]) if c not in self.exclude_channels], 
+                           self.indices[index][0]:self.indices[index][1], 
+                           self.indices[index][2]:self.indices[index][3], 
+                           self.indices[index][4]:self.indices[index][5]]
+
+
+        mean = np.mean(vol, axis=(1, 2, 3), keepdims=True)
+        std = np.std(vol, axis=(1, 2, 3), keepdims=True)
+        std = np.where(std == 0, 1, std)
+
+
+        sample = {"vol": Tensor((vol - mean) / std), 
+                  "vol_index": Tensor(self.indices[index])}
+
+        assert any(std != 0.0), "One of the channels has std == 0, avoiding div by zero"
+        #assert any()
+        return sample
 
         #return sample
 
