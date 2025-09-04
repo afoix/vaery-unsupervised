@@ -252,7 +252,7 @@ class MarlinDataModule(L.LightningDataModule):
             self.dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata,
-                transform=self.transforms
+                transform=None,
             )
 
     def train_dataloader(self): 

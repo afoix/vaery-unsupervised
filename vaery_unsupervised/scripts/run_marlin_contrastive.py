@@ -11,6 +11,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import random
+from torchview import draw_graph
 
 from vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule, MarlinDataset
 from vaery_unsupervised.networks.marlin_resnet import SmallObjectResNet10Encoder
@@ -107,17 +108,28 @@ for batch in dataloader:
     time.sleep(1)
     plt.close()
 #%%
-marlin_encoder = SmallObjectResNet10Encoder(
-        in_channels=1,
-        widths=(32, 64, 128, 256),   # slim to reduce overfitting
-        feature_stage="layer4",      # use "layer3" if you want even fewer params
-        layer4_dilate=3,             # captures long rods without further downsampling
-        norm="group", gn_groups=8,   # better than BN for small batches
-        drop_path_rate=0.05,         # mild stochastic depth
-        mlp_hidden_dims=512,         # set = embedding_dim if you prefer
-        projection_dim=128,
-    )
+# marlin_encoder = SmallObjectResNet10Encoder(
+#         in_channels=1,
+#         widths=(32, 64, 128, 256),   # slim to reduce overfitting
+#         feature_stage="layer4",      # use "layer3" if you want even fewer params
+#         layer4_dilate=3,             # captures long rods without further downsampling
+#         norm="group", gn_groups=8,   # better than BN for small batches
+#         drop_path_rate=0.05,         # mild stochastic depth
+#         mlp_hidden_dims=512,         # set = embedding_dim if you prefer
+#         projection_dim=128,
+#     )
 
+
+marlin_encoder_config = {
+    "backbone": "resnet18",
+    "in_channels": 1,
+    "spatial_dims": 2,
+    "embedding_dim": 512,
+    "mlp_hidden_dims": 256,#768,
+    "projection_dim": 32,
+    "pretrained": False,
+    }
+marlin_encoder = ResNetEncoder(**marlin_encoder_config)
 #%%
 marlin_contrastive_config = {
     "encoder": marlin_encoder,
@@ -129,7 +141,13 @@ marlin_contrastive = ContrastiveModule(**marlin_contrastive_config)
 #%%
 marlin_contrastive(batch['anchor'])
 
-
+#%%
+graph = draw_graph(
+    model=marlin_contrastive,
+    input_size=(32, 1, 150, 150),
+    expand_nested=True,
+)
+graph.visual_graph
 #%%
 # emb, proj = marlin_encoder(batch_sample['anchor'])
 feature_map = marlin_encoder.resnet(batch_sample['anchor'])[-1]

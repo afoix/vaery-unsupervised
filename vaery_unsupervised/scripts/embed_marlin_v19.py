@@ -31,17 +31,27 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LOGS_HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive/')
 checkpoint_path = LOGS_HEADPATH / 'version_7/checkpoints/last.ckpt'
 
-marlin_encoder_config = {
-    "backbone": "resnet18",
-    "in_channels": 1,
-    "spatial_dims": 2,
-    "embedding_dim": 512,
-    "mlp_hidden_dims": 256,#768,
-    "projection_dim": 32,
-    "pretrained": False,
-    }
+marlin_encoder = SmallObjectResNet10Encoder(
+    in_channels=1,
+    widths=(32, 64, 128, 256),   # slim to reduce overfitting
+    feature_stage="layer4",      # use "layer3" if you want even fewer params
+    layer4_dilate=3,             # captures long rods without further downsampling
+    norm="batch", gn_groups=8,   # better than BN for small batches
+    drop_path_rate=0.05,         # mild stochastic depth
+    mlp_hidden_dims=512,         # set = embedding_dim if you prefer
+    projection_dim=128,
+)
 
-marlin_encoder = ResNetEncoder(**marlin_encoder_config)
+# marlin_encoder = ResNetEncoder(**marlin_encoder_config)
+# marlin_encoder = CustomResNetEncoder(**marlin_encoder_config)
+marlin_contrastive_config = {
+    "encoder": marlin_encoder,
+    "loss": SelfSupervisedLoss(NTXentLoss(temperature=0.07)),
+    "lr": 1e-3,#1e-3,
+}
+
+marlin_contrastive = ContrastiveModule(**marlin_contrastive_config)
+# marlin_encoder = ResNetEncoder(**marlin_encoder_config)
 loss = SelfSupervisedLoss(NTXentLoss(temperature=0.07))
 lr = 1e-3
 optimizer = torch.optim.Adam(marlin_encoder.parameters(), lr=lr)

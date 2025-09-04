@@ -29,9 +29,10 @@ MEAN_OVER_DATASET = 13
 STD_OVER_DATASET = 11
 
 HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
-METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
+# METADATA_PATH = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl'
 # METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_filtered_266-trenches.pkl'
-METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle'
+# METADATA_COMPACT_PATH  = HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle'
+METADATA_BALANCED_PATH = HEADPATH / '2025-09-03_lDE20_Final_balanced_30tr-per-gene.pkl'
 
 transforms = Compose([
     # NormalizeIntensity(
@@ -69,16 +70,15 @@ transforms = Compose([
 
 def main(*args, **kwargs):
 
-    marlin_encoder_config = {
-    "backbone": "resnet18",
-    "in_channels": 1,
-    "spatial_dims": 2,
+    # marlin_encoder_config = {
+    # "backbone": "resnet18",
+    # "in_channels": 1,
+    # "spatial_dims": 2,
     # "embedding_dim": 512,
-    ''
-    "mlp_hidden_dims": 256,#768,
-    "projection_dim": 32,
-    "pretrained": False,
-    }
+    # "mlp_hidden_dims": 256,#768,
+    # "projection_dim": 32,
+    # "pretrained": False,
+    # }
 
     marlin_encoder = SmallObjectResNet10Encoder(
         in_channels=1,
@@ -104,10 +104,10 @@ def main(*args, **kwargs):
 
     data_module = MarlinDataModule(
         data_path=HEADPATH/'Ecoli_lDE20_Exps-0-1/',
-        metadata_path=METADATA_COMPACT_PATH,
+        metadata_path=METADATA_BALANCED_PATH,
         split_ratio=0.8,
-        batch_size=128,#256,#256,
-        num_workers=4,
+        batch_size=128+64,#256,#256,
+        num_workers=8,
         prefetch_factor=2,
         transforms=transforms,
     )

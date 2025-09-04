@@ -266,3 +266,49 @@ metadata_grnas_to_keep = metadata[metadata['oDEPool7_id'].isin(grna_ids_to_keep)
 # SAMPLED_STD = WEIGHTED_STD/N_IMAGES
 
 # print(SAMPLED_MEAN, SAMPLED_STD)
+
+
+
+#%%
+metadata = pd.read_pickle(METADATA_PATH)
+# metadata = metadata.sample(frac=0.1, random_state=42)
+# metadata.to_pickle(METADATA_COMPACT_PATH)
+metadata
+#%%
+gene_ids = metadata['gene_id'].unique()
+grna_ids_per_gene_id = {gene_id: metadata[metadata['gene_id'] == gene_id]['oDEPool7_id'].unique().tolist() for gene_id in gene_ids} 
+
+def trim_list(input_list, max_length):
+    if len(input_list) > max_length:
+        return np.random.choice(input_list, max_length, replace=False).tolist()
+    return input_list
+
+grna_ids_per_gene_id_trimmed = (
+    {gene_id: trim_list(grna_ids, 2) for gene_id, grna_ids in grna_ids_per_gene_id.items()}
+)
+
+grna_ids_trimmed = [grna_id for grna_ids in grna_ids_per_gene_id_trimmed.values() for grna_id in grna_ids]
+
+# Apply mask to metadata to keep only the trimmed grna_ids for each gene_id
+#%%
+metadata_trimmed = metadata[metadata['oDEPool7_id'].isin(grna_ids_trimmed)]
+
+#%%
+metadata_first_timepoint = metadata.groupby('gene_grna_trench_index').first().reset_index()
+metadata_first_timepoint
+gene_grna_trench_indices_per_gene_id = {
+    gene_id: metadata_first_timepoint[metadata_first_timepoint['gene_id'] == gene_id]['gene_grna_trench_index'].tolist()
+    for gene_id in metadata_first_timepoint['gene_id'].unique()
+}
+
+#%%
+gene_grna_trench_indices_per_gene_id_trimmed = {
+    gene_id: trim_list(gene_grna_trench_indices, 30)
+    for gene_id, gene_grna_trench_indices in gene_grna_trench_indices_per_gene_id.items()
+}
+#%%
+metadata_trimmed = metadata[metadata['gene_grna_trench_index'].isin(
+    [gene_grna_trench_index for gene_grna_trench_indices in gene_grna_trench_indices_per_gene_id_trimmed.values() for gene_grna_trench_index in gene_grna_trench_indices]
+)]
+#%%
+metadata_trimmed.to_pickle(HEADPATH / '2025-09-03_lDE20_Final_balanced_30tr-per-gene.pkl')
