@@ -10,7 +10,7 @@ from monai.transforms import Compose
 from torch.utils.data import DataLoader, Dataset
 from monai.transforms import Compose, RandSpatialCrop
 
-from utils import extract_overlapping_patches_grid
+from vaery_unsupervised.microsplit.utils import extract_overlapping_patches_grid
 
 
 class MicroSplitHCSTrainingDataset(Dataset):
@@ -131,9 +131,9 @@ class MicroSplitHCSInferenceDataset(Dataset):
         patches_info = {"coords": coords, "idx": index}
 
         # get superimposed image
-        mixed_img = torch.mean(multi_ch_patches, dim=1, keepdim=True)
+        mixed_patches = torch.mean(multi_ch_patches, dim=1, keepdim=True)
 
-        return mixed_img, multi_ch_img, patches_info
+        return mixed_patches, multi_ch_img, patches_info
     
     def __len__(self):
         return len(self.all_positions)

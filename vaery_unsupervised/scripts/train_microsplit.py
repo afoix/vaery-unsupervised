@@ -23,8 +23,9 @@ from microsplit_reproducibility.configs.parameters._base import SplittingParamet
 from vaery_unsupervised.microsplit.utils import (
     compute_metrics,
     show_metrics,
-    full_frame_evaluation,
-    get_MicroSplit_predictions
+    get_MicroSplit_predictions,
+    stitch_tiles,
+    full_frame_evaluation
 )
 from vaery_unsupervised.microsplit.microsplit_dataloader import MicroSplitHCSDataModule
 
@@ -40,7 +41,7 @@ data_module = MicroSplitHCSDataModule(
     crops_per_position=4,
     batch_size=32,
     num_workers=6,
-    split_ratio=0.85,
+    split_ratios=(0.9, 0.1, 0.1),
     augmentations=[
         RandRotate(range_x=[90, 90], prob=0.2),
         RandFlip(prob=0.2, spatial_axis=-1),
@@ -156,19 +157,27 @@ unmixed_predictions, unmixed_stds = get_MicroSplit_predictions(
 )
 
 
-#%%
+# #%%
 # Visualize predictions
 # get the target and input from the test dataset for visualization purposes
-tar = data_module.val_dataset[1]
-inp = data_module.val_dataset[0].sum(-1)
+inputs = []
+targets = []
+for batch in data_module.test_dataloader():
+    targets.append(batch[1].numpy())
+    input_patches = batch[0].numpy()
+    patch_info = batch[2]
+    stitched_input = stitch_tiles(input_patches, patch_info)
+    inputs.append(stitched_input)
 
 #%%
-frame_idx = 0 # Change this index to visualize different frames
-assert frame_idx < len(stitched_predictions), f"Frame index {frame_idx} out of bounds. Max index is {len(stitched_predictions) - 1}."
+full_frame_evaluation(
+    inp=inputs[0],
+    tar=targets[0],
+    stitched_predictions=unmixed_predictions[0],
+)
 
-full_frame_evaluation(stitched_predictions[frame_idx], tar[frame_idx], inp[frame_idx], same_scale=False)
 
-#%%
+# #%%
 # Comment out the metrics you don't want to use
 METRICS = [
     "PSNR",
@@ -180,12 +189,6 @@ METRICS = [
     "LPIPS",
 ]
 
-#%%
-# Extract gt dataset
-gt_data = []
-for batch in data_module.val_dataloader():
-    gt_data.append(batch[1].numpy())
-
-#%%
-metrics_dict = compute_metrics(gt_data, stitched_predictions, metrics=METRICS)
+# #%%
+metrics_dict = compute_metrics(targets, unmixed_predictions, metrics=METRICS)
 show_metrics(metrics_dict)
