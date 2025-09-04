@@ -29,4 +29,3 @@ app = get_dash_app_3D_scatter_hover_images(df,plot_keys=["0","1","2"],hue="Label
 app.run(
     port=6006
 )
-# %%
