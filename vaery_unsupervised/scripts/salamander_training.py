@@ -14,7 +14,7 @@ seed_everything(1010)
 def main():
     #torch.set_float32_matmul_precision("high")
 
-    model_name = "sal_model_v2_z1024_b32_e8_sz64"
+    model_name = "sal_model_v2_z1024_b32_e7_sz64"
 
     dataset = SalBrainDataModule(
         batch_size=32,
@@ -33,7 +33,7 @@ def main():
     print(f"Batch shape: {batch_shape}")
 
     model = SalamanderVAE(
-        beta=1e-8,
+        beta=1e-7,
         matrix_size=batch_shape[3],
         latent_size=1024,
         n_chan=batch_shape[1],
@@ -45,9 +45,11 @@ def main():
         accelerator="gpu",
         # precision='16-mixed',
         max_epochs=1000,
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=1,
         logger=logger_tb,
         log_every_n_steps=1,
+        gradient_clip_val=1.0,
+        gradient_clip_algorithm="value",
         callbacks=[
             ModelCheckpoint(save_top_k=10, monitor="val/loss", every_n_epochs=5)
         ],

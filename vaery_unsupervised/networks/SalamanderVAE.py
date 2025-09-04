@@ -17,7 +17,7 @@ _logger = logging.getLogger("lightning.pytorch")
 def model_loss(x, recon_x, z_mean, z_log_var, beta=1e-3, clamp_kl=1e12):
     mse = torch.nn.functional.mse_loss(x, recon_x)
     kl_loss = -0.5 * torch.sum(1 + z_log_var - z_mean.pow(2) - z_log_var.exp())
-    kl_loss = torch.clamp(kl_loss, max=clamp_kl)
+    #kl_loss = torch.clamp(kl_loss, max=clamp_kl)
     loss = mse + beta * kl_loss
     return loss, mse, kl_loss
 
@@ -68,10 +68,13 @@ class SalamanderVAE(LightningModule):
         super().__init__()
 
         self.encode = ResNet18Enc(nc=n_chan, z_dim=latent_size, matrix_size=matrix_size)
-        self.decode = ResNet18Dec(nc=n_chan, z_dim=latent_size, matrix_size=matrix_size)
+        self.decode = ResNet18Dec(nc=n_chan, z_dim=latent_size, matrix_size=matrix_size, final_activation="")
 
         # specify desired loss
-        self.save_hyperparameters()
+        self.save_hyperparameters({"beta": beta,
+                                  "matrix_size": matrix_size,
+                                  "latent_size": latent_size,
+                                  "n_chan": n_chan})
         self.beta = beta
         self.loss = model_loss
 
@@ -91,6 +94,7 @@ class SalamanderVAE(LightningModule):
         self.log("train/loss", loss.item())
         self.log("train/loss/recon", recon.item())
         self.log("train/loss/kld", kld.item())
+        self.log("train/loss/kld_x_beta", (self.beta * kld).item())
 
         return loss
 
@@ -100,9 +104,12 @@ class SalamanderVAE(LightningModule):
         x_hat, z_mean, z_log_var = self(x)
         loss, recon, kld = self.loss(x, x_hat, z_mean, z_log_var)
 
+        self.log("val/mean_z_mean", z_mean.detach().cpu().numpy().mean())
+        self.log("val/mean_log_var", z_log_var.detach().cpu().numpy().mean())
         self.log("val/loss", loss.item())
         self.log("val/loss/recon", recon.item())
         self.log("val/loss/kld", kld.item())
+        self.log("val/loss/kld_x_beta", (self.beta * kld).item())
 
         self.img_sample = []
         self.x_hat_sample = []
