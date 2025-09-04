@@ -1037,7 +1037,7 @@ def compute_sparsity_stats(dataset, n_stains, print_stats=True):
     }
 
 
-def inspect_pt_file(obj, max_items=10, max_repr=5):
+def inspect_pt_file(obj, max_items=10, max_repr=50):
     def summarize(v):
         if isinstance(v, torch.Tensor):
             try:
