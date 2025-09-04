@@ -20,13 +20,13 @@ from vaery_unsupervised.scripts.utils import run_inference
 INSPECT_DATASET_AND_EXIT = False
 pickle_to_inspect = "sixce_dataset_2kCells.pt"
 
-RUN_INFERENCE_ONLY = False
-checkpoint_to_load = "SIXCE-15/last.ckpt" # str: run_id/checkpoint_file_name.ckpt"
+RUN_INFERENCE_ONLY = True
+checkpoint_to_load = "SIXCE-20/epoch=29-step=3330.ckpt" # str: run_id/checkpoint_file_name.ckpt"
 
-OVERWRITE_DATASET = True
+OVERWRITE_DATASET = False
 
 # Neptune experiment description
-EXPERIMENT_DESCRIPTION = (f"SIXCE: resnet34, mlp 768, proj 128, 10k-cells")
+EXPERIMENT_DESCRIPTION = (f"SIXCE: resnet34, mlp 768, proj 128, 2k-cells (tau 0.25)")
 NEPTUNE_TOKEN_PATH = "/dgx1nas1/storage/data/kamal/neptune_token"
 with open(NEPTUNE_TOKEN_PATH, "r") as f:
     api_token = f.read().strip()
@@ -40,8 +40,8 @@ OME_ZARR_PATH = '/raid/data/temp_kamal/merged_mosaics.ome.zarr'
 CHECKPOINT_PATH = os.path.join(DATA_PATH, "checkpoints")
 SAVED_INFERENCE_PATH = os.path.join(DATA_PATH, "inferences")
 
-# Training dataset parameters (can be overwritten if loading existing dataset) -----------------------------------------
-RANDOM_SUBSET = 10000 # if -1, uses all samples
+# Training dataset parameters (params overwritten if loading existing dataset) -----------------------------------------
+RANDOM_SUBSET = 2000 # if -1, uses all samples
 # Unsorted list of stains to include in the training. Will get sorted downstream based on the OME-Zarr attributes
 STAINS_unsorted = ['DAPI', 'Cellbound1', 'Cellbound2', 'Cellbound3', 'Ki67', 'WT1', 'PolyT']
 N_MASKS = 0 # cell mask (numeric bool)
@@ -62,15 +62,15 @@ PADDING = 4 # spot padding for binary spot representation
 GLOBAL_SEED = 137
 LEARNING_RATE = 0.0005
 EPOCHS = 50
-BATCH_SIZE = 96 #64
-N_WORKERS = 20
+BATCH_SIZE = 72 #vRAM=31.7GiB@80, 30.7GiB@72
+N_WORKERS = 10 # 10 workers, pre-fetch=2, batch sz=72 costs 250GiB vRAM
 VALIDATION_FRACTION=0.2
 ENCODER_BACKBONE = 'resnet34' # available: resnet18, 34, 50, 101, 152, 200
 MLP_HIDDEN_DIMS = 768 #256
 PROJECTION_DIMS = 128
 
 # Loss function parameters ---------------------------------------------------------------------------------------------
-LOSS_TEMPERATURE=0.1
+LOSS_TEMPERATURE = 0.25
 
 # Experiment variables -------------------------------------------------------------------------------------------------
 DRY_RUN = False
@@ -129,16 +129,13 @@ if os.path.exists(saved_dataset_path) and not OVERWRITE_DATASET:
     cell_boundaries_df=None
 
     # Loading gene expression df for inference
-    if RUN_INFERENCE_ONLY:
-        print("Loading detected_transcripts.csv")
-        # Load dataframe with the detected transcripts
-        transcript_df_path = os.path.join(DATAFRAMES_PATH, "detected_transcripts.csv")
-        transcript_df = pd.read_csv(transcript_df_path)
-        # Removing blank probes/rounds
-        blank_rows = transcript_df["gene"].str.startswith("Blank-")
-        transcript_df.drop(index=transcript_df.index[blank_rows], inplace=True)
-    else:
-        transcript_df = None
+    print("Loading detected_transcripts.csv")
+    # Load dataframe with the detected transcripts
+    transcript_df_path = os.path.join(DATAFRAMES_PATH, "detected_transcripts.csv")
+    transcript_df = pd.read_csv(transcript_df_path)
+    # Removing blank probes/rounds
+    blank_rows = transcript_df["gene"].str.startswith("Blank-")
+    transcript_df.drop(index=transcript_df.index[blank_rows], inplace=True)
 
 else:
     dataset=None
@@ -289,7 +286,7 @@ def main():
         trainer = pl.Trainer(
             accelerator="gpu",
             num_nodes=1,
-            precision="16-mixed",
+            # precision="16-mixed",
             strategy="auto",
             max_epochs=EPOCHS,
             logger=logger,
@@ -303,7 +300,7 @@ def main():
         dm.setup(stage="fit")
         trainer.fit(model, datamodule=dm)
 
-        # Predict (returns and auto saves embeddings, projections, and annotated PCA, UMAP, and tSNE)
+        # Predict (returns and auto saves embeddings, projections, cell_ids, and annotated PCA, UMAP, and tSNE)
         run_inference(
             saved_inference_path=SAVED_INFERENCE_PATH,
             model_name=run_id,
@@ -311,7 +308,7 @@ def main():
             model=model,
             global_seed=GLOBAL_SEED,
             transcript_df=transcript_df,
-            annotation_marker_list=None
+            annotation_marker_list=-1 # None for no annotations, -1 for all genes
         )
 
     elif checkpoint_to_load is not None:
