@@ -264,5 +264,3 @@ unmixed_predictions_arr = np.array(unmixed_predictions)
 #%%
 metrics_dict = compute_metrics(targets_arr, unmixed_predictions_arr, metrics=METRICS)
 show_metrics(metrics_dict)
-
-# %%
