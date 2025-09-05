@@ -155,6 +155,7 @@ ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs/MicroSplit_20
 ckpt = torch.load(ckpt_path, map_location="cuda")
 model.load_state_dict(ckpt['state_dict'], strict=True)
 model.to("cuda")
+print("Model loaded from checkpoint:", ckpt_path)
 
 #%%
 # Evaluate model on test dataset
@@ -189,11 +190,14 @@ axes[2].imshow(targets[0][0][2], cmap='gray')
 
 
 #%%
-full_frame_evaluation(
-    inp=inputs[0][0],
-    tar=targets[0][0],
-    stitched_predictions=unmixed_predictions[0][0],
-)
+fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
+fig.patch.set_facecolor("black")
+axes[0, 0].imshow(targets[0][0][0], cmap='gray')
+axes[0, 1].imshow(targets[0][0][1], cmap='gray')
+axes[0, 2].imshow(targets[0][0][2], cmap='gray')
+axes[1, 0].imshow(unmixed_predictions[0][0], cmap='gray')
+axes[1, 1].imshow(unmixed_predictions[0][1], cmap='gray')
+axes[1, 2].imshow(unmixed_predictions[0][2], cmap='gray')
 
 
 # #%%
@@ -211,3 +215,5 @@ METRICS = [
 # #%%
 metrics_dict = compute_metrics(targets, unmixed_predictions, metrics=METRICS)
 show_metrics(metrics_dict)
+
+# %%
