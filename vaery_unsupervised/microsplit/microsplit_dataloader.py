@@ -150,7 +150,7 @@ class MicroSplitHCSDataModule(pl.LightningDataModule):
         random_cropping: bool = True,
         batch_size: int = 32,
         num_workers: int = 3,
-        split_ratios: list[float, float, float] = [0.9, 0.1, 0.1], 
+        split_ratios: list[float, float, float] = [0.8, 0.1, 0.1], 
         random_state: int = 42,
         augmentations: list[Callable] = [],
         mix_coeff_range: tuple[float, float] = (0.0, 1.0)
