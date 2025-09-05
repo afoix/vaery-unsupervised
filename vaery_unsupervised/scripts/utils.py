@@ -189,6 +189,7 @@ def plot_pca_umap_tsne(
 def run_inference(
         saved_inference_path: str,
         model_name: str,
+        model_graph,
         data_module,
         model,
         global_seed,
@@ -224,6 +225,10 @@ def run_inference(
     np.save(os.path.join(current_inference_path, f"{model_name}_embeddings.npy"), embeddings)
     np.save(os.path.join(current_inference_path, f"{model_name}_projections.npy"), projections)
     np.save(os.path.join(current_inference_path, f"{model_name}_cell_ids.npy"), cell_ids_order)
+
+    # Save model graph
+    graph_path = os.path.join(current_inference_path, f"{model_name}_graph")
+    model_graph.visual_graph.render(graph_path, format="png")
 
     # Run PCA, UMAP, and tSNE
     print("Generating embeddings viz...")
