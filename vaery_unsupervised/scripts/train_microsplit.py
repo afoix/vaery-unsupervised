@@ -9,6 +9,8 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from monai.transforms import RandRotate, RandFlip
+import cmap
+import numpy as np
 
 from microsplit_reproducibility.configs.factory import (
     create_algorithm_config,
@@ -42,7 +44,7 @@ data_module = MicroSplitHCSDataModule(
     crops_per_position=4,
     batch_size=32,
     num_workers=6,
-    split_ratios=(0.9, 0.1, 0.1),
+    split_ratios=(0.8, 0.15, 0.05),
     augmentations=[
         RandRotate(range_x=[90, 90], prob=0.2),
         RandFlip(prob=0.2, spatial_axis=-1),
@@ -60,16 +62,19 @@ batch_sample = next(iter(train_loader))
 print(batch_sample[0].shape, batch_sample[1].shape)
 
 #%%
+cmap_nuc=cmap.Colormap('cmap:cyan').to_mpl()
+cmap_er=cmap.Colormap('cmap:green').to_mpl()
+cmap_mito=cmap.Colormap('chrisluts:BOP_Orange').to_mpl()
 fig, ax = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 ax[0, 0].imshow(batch_sample[0].numpy()[0, 0], cmap='gray')
 ax[0, 0].set_title("Mixed Image")
 ax[0, 1].set_axis_off()
 ax[0, 2].set_axis_off()
-ax[1, 0].imshow(batch_sample[1].numpy()[0, 0], cmap='magma')
+ax[1, 0].imshow(batch_sample[1].numpy()[0, 0], cmap=cmap_mito)
 ax[1, 0].set_title("Channel 0")
-ax[1, 1].imshow(batch_sample[1].numpy()[0, 1], cmap='magma')
+ax[1, 1].imshow(batch_sample[1].numpy()[0, 1], cmap=cmap_er)
 ax[1, 1].set_title("Channel 1")
-ax[1, 2].imshow(batch_sample[1].numpy()[0, 2], cmap='magma')
+ax[1, 2].imshow(batch_sample[1].numpy()[0, 2], cmap=cmap_nuc)
 ax[1, 2].set_title("Channel 2")
 plt.show()
 
@@ -121,7 +126,7 @@ model = VAEModule(algorithm_config=experiment_config)
 
 #%%
 # Setup Trainer
-logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs")
+logging_path = Path("/mnt/efs/aimbl_2025/student_data/S-RM/RM_microsplit_logs")
 logging_path.mkdir(exist_ok=True)
 logger = TensorBoardLogger(
     save_dir=logging_path,
@@ -151,7 +156,7 @@ trainer.fit(
 
 #%%
 # Or load previous checkpoints
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs/MicroSplit_2025-09-04_13/version_0/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/RM_microsplit_logs/MicroSplit_2025-09-04_13/version_0/checkpoints/last.ckpt"
 ckpt = torch.load(ckpt_path, map_location="cuda")
 model.load_state_dict(ckpt['state_dict'], strict=True)
 model.to("cuda")
@@ -184,23 +189,49 @@ plt.imshow(inputs[0][0][0], cmap='gray')
 
 #%%
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
-axes[0].imshow(targets[0][0][0], cmap='gray')
-axes[1].imshow(targets[0][0][1], cmap='gray')
-axes[2].imshow(targets[0][0][2], cmap='gray')
+axes[0].imshow(targets[0][0][0], cmap=cmap_mito)
+axes[1].imshow(targets[0][0][1], cmap=cmap_er)
+axes[2].imshow(targets[0][0][2], cmap=cmap_nuc)
 
 
 #%%
 fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 fig.patch.set_facecolor("black")
-axes[0, 0].imshow(targets[0][0][0], cmap='gray')
-axes[0, 1].imshow(targets[0][0][1], cmap='gray')
-axes[0, 2].imshow(targets[0][0][2], cmap='gray')
-axes[1, 0].imshow(unmixed_predictions[0][0], cmap='gray')
-axes[1, 1].imshow(unmixed_predictions[0][1], cmap='gray')
-axes[1, 2].imshow(unmixed_predictions[0][2], cmap='gray')
+axes[0, 0].imshow(targets[40][0][0], cmap=cmap_mito)
+axes[0, 1].imshow(targets[40][0][1], cmap=cmap_er)
+axes[0, 2].imshow(targets[40][0][2], cmap=cmap_nuc)
+axes[1, 0].imshow(unmixed_predictions[40][0], cmap=cmap_mito)
+axes[1, 1].imshow(unmixed_predictions[40][1], cmap=cmap_er)
+axes[1, 2].imshow(unmixed_predictions[40][2], cmap=cmap_nuc)
+
+#%%
+fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
+fig.patch.set_facecolor("black")
+
+axes[0, 0].imshow(targets[40][0][0], cmap=cmap_mito,
+                  vmin=np.percentile(targets[40][0][0], 1),
+                  vmax=np.percentile(targets[40][0][0], 99))
+axes[0, 1].imshow(targets[40][0][1], cmap=cmap_er,
+                  vmin=np.percentile(targets[40][0][1], 1),
+                  vmax=np.percentile(targets[40][0][1], 99))
+axes[0, 2].imshow(targets[40][0][2], cmap=cmap_nuc,
+                  vmin=np.percentile(targets[40][0][2], 1),
+                  vmax=np.percentile(targets[40][0][2], 99))
+
+axes[1, 0].imshow(unmixed_predictions[40][0], cmap=cmap_mito,
+                  vmin=np.percentile(unmixed_predictions[40][0], 1),
+                  vmax=np.percentile(unmixed_predictions[40][0], 99))
+axes[1, 1].imshow(unmixed_predictions[40][1], cmap=cmap_er,
+                  vmin=np.percentile(unmixed_predictions[40][1], 1),
+                  vmax=np.percentile(unmixed_predictions[40][1], 99))
+axes[1, 2].imshow(unmixed_predictions[40][2], cmap=cmap_nuc,
+                  vmin=np.percentile(unmixed_predictions[40][2], 1),
+                  vmax=np.percentile(unmixed_predictions[40][2], 99))
+#%%
 
 
-# #%%
+
+#%%
 # Comment out the metrics you don't want to use
 METRICS = [
     "PSNR",
