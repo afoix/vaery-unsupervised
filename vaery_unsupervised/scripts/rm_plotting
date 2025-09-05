@@ -39,7 +39,7 @@ data_module = HCSDataModule(
         weight_channel_name='nuclei',
         crop_size=(128, 128),
         crops_per_position=4,
-        batch_size=32,
+        batch_size=64,
         num_workers=6,
         split_ratio=0.8,
         normalization_transform=[],
@@ -53,15 +53,15 @@ val_loader = data_module.val_dataloader()
 
 #%%
 
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_29/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_35/checkpoints/last.ckpt"
 
 hcs_encoder_config = {
     "backbone": "resnet18",
     "in_channels": 3,
     "spatial_dims": 2,
     "embedding_dim": 512,
-    "mlp_hidden_dims": 768,
-    "projection_dim": 128,
+    "mlp_hidden_dims": 256,#256 originally 768
+    "projection_dim": 64,#64 originally 128
     "pretrained": False,
 }
 hcs_encoder = ResNetEncoder(**hcs_encoder_config)
@@ -338,10 +338,49 @@ plt.title("t-SNE of Contrastive Embeddings\nHighlighting negcon")
 plt.tight_layout()
 plt.show()
 
+
 #%%
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+# Reduce to 2D
+pca = PCA(n_components=2)
+proj_2d = pca.fit_transform(all_proj)
+
+# Choose which genes to show
+genes_to_show = ["negcon", "CASP3", "AURKB", "PLK1", "KRAS", "HSP90AB1"]
+
+
+# Subset the data
+mask = full_df["gene"].str.lower().isin([g.lower() for g in genes_to_show])
+proj_subset = proj_2d[mask]
+genes_subset = full_df.loc[mask, "gene"].str.upper()
+
+# Assign colors dynamically
+unique_genes = sorted(genes_subset.unique())
+cmap = plt.get_cmap("tab10")   # tab10 has 10 distinct colors
+gene_to_color = {g: cmap(i) for i, g in enumerate(unique_genes)}
+colors = [gene_to_color[g] for g in genes_subset]
+
+# Plot
+plt.figure(figsize=(10, 8))
+plt.scatter(proj_subset[:, 0], proj_subset[:, 1],
+            c=colors, alpha=0.7)
+
+# Legend
+for g, c in gene_to_color.items():
+    plt.scatter([], [], c=c, label=g)
+
+plt.legend(title="Gene", bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("PCA of Contrastive Embeddings\n(Selected Genes Only)")
+plt.tight_layout()
+plt.show()
 
 
 
+#%%
 
 
 
