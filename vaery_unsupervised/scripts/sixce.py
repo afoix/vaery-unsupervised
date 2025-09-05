@@ -1,3 +1,18 @@
+# Warning suppression
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*The `srun` command is available on your system but is not used.*",
+)
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*n_jobs value 1 overridden to 1 by setting random_state.*",
+    category=UserWarning,
+    module="umap.umap_"
+)
+
 import os
 import numpy as np
 import pandas as pd
@@ -7,7 +22,7 @@ import sys
 import pytorch_lightning as pl
 from lightning.pytorch.loggers import NeptuneLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-import warnings
+import torchview
 
 # Local imports
 from vaery_unsupervised.dataloaders.dataloader_sixce import SixceDataModule, inspect_pt_file
@@ -20,8 +35,10 @@ from vaery_unsupervised.scripts.utils import run_inference
 INSPECT_DATASET_AND_EXIT = False
 pickle_to_inspect = "sixce_dataset_2kCells.pt"
 
-RUN_INFERENCE_ONLY = True
-checkpoint_to_load = "SIXCE-20/epoch=29-step=3330.ckpt" # str: run_id/checkpoint_file_name.ckpt"
+RUN_INFERENCE_ONLY = False
+checkpoint_to_load = "SIXCE-29/epoch=32-step=726.ckpt" # str: run_id/checkpoint_file_name.ckpt"
+
+DRY_RUN = False
 
 OVERWRITE_DATASET = False
 
@@ -41,7 +58,7 @@ CHECKPOINT_PATH = os.path.join(DATA_PATH, "checkpoints")
 SAVED_INFERENCE_PATH = os.path.join(DATA_PATH, "inferences")
 
 # Training dataset parameters (params overwritten if loading existing dataset) -----------------------------------------
-RANDOM_SUBSET = 2000 # if -1, uses all samples
+RANDOM_SUBSET = 10000 # if -1, uses all samples
 # Unsorted list of stains to include in the training. Will get sorted downstream based on the OME-Zarr attributes
 STAINS_unsorted = ['DAPI', 'Cellbound1', 'Cellbound2', 'Cellbound3', 'Ki67', 'WT1', 'PolyT']
 N_MASKS = 0 # cell mask (numeric bool)
@@ -71,9 +88,10 @@ PROJECTION_DIMS = 128
 
 # Loss function parameters ---------------------------------------------------------------------------------------------
 LOSS_TEMPERATURE = 0.25
+LAMBDA_CONTRASTIVE_LOSS = 0.5
+LAMBDA_CLASSIFICATION_LOSS = 0.5
 
 # Experiment variables -------------------------------------------------------------------------------------------------
-DRY_RUN = False
 EPOCHS = 1 if DRY_RUN else EPOCHS
 
 # Loading pickled dataset for inspection and exiting
@@ -261,11 +279,20 @@ def main():
     )
 
     if not RUN_INFERENCE_ONLY:
-        model = ContrastiveModule(encoder=encoder, lr=LEARNING_RATE, optimizer=None, temperature=LOSS_TEMPERATURE)
+        model = ContrastiveModule(encoder=encoder, lr=LEARNING_RATE, optimizer=None, temperature=LOSS_TEMPERATURE,
+                                  lambda_class_loss=LAMBDA_CLASSIFICATION_LOSS,
+                                  lambda_contrast_loss=LAMBDA_CONTRASTIVE_LOSS)
+
+        # Generating model graph
+        model_graph = torchview.draw_graph(
+            model,
+            input_size=(BATCH_SIZE, N_GENES + N_STAINS, INPUT_DIM, INPUT_DIM),
+        )
 
         # Initialize Neptune
         if DRY_RUN:
             run_id = "dry_run"
+            logger=None
         else:
             logger = NeptuneLogger(
                 api_key=api_token,
@@ -290,7 +317,7 @@ def main():
             strategy="auto",
             max_epochs=EPOCHS,
             logger=logger,
-            devices=1,
+            devices=[6], #1,
             # fast_dev_run=True, #Only when debugging
             callbacks = [ModelCheckpoint( dirpath=current_checkpoint_path,
                 filename="{epoch}-{step}", save_last=True, monitor="loss/val", save_top_k=8, every_n_epochs=1)],
@@ -304,6 +331,7 @@ def main():
         run_inference(
             saved_inference_path=SAVED_INFERENCE_PATH,
             model_name=run_id,
+            model_graph=model_graph,
             data_module=dm,
             model=model,
             global_seed=GLOBAL_SEED,
@@ -316,6 +344,12 @@ def main():
         model = ContrastiveModule.load_from_checkpoint(model_path, encoder=encoder)
         model_name = checkpoint_to_load.split('/')[0]
 
+        # Generating model graph
+        model_graph = torchview.draw_graph(
+            model,
+            input_size=(BATCH_SIZE, N_GENES + N_STAINS, INPUT_DIM, INPUT_DIM),
+        )
+
         # Sanity check embedding by annotating based on expression of some marker genes
         # marker_list = ["AQP2", "PODXL", "PLA2R1", "MZB1", "NKG7", "C1QA", "C1QB", "C1QC", "FCN1", "TRAC", "FCGR3A",
         #                "PTPRC", "CLDN5", "ESM1", "SPARCL1"]
@@ -323,11 +357,12 @@ def main():
         run_inference(
             saved_inference_path=SAVED_INFERENCE_PATH,
             model_name=model_name,
+            model_graph=model_graph,
             data_module=dm,
             model=model,
             global_seed=GLOBAL_SEED,
             transcript_df=transcript_df,
-            annotation_marker_list=None
+            annotation_marker_list=-1
         )
 
 
