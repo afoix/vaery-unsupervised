@@ -378,6 +378,7 @@ class SpotStainDataset(Dataset):
 
         cell_index = self.cell_indices[index]
         transcripts_tensor = torch.tensor(input_array.copy(), dtype=self.tensor_type)
+        binary_spot_presence_vector = (transcripts_tensor != 0).any(dim=(1, 2)).to(torch.int8)
 
         # Stack all stain crops in a fixed order
         stain_tensors = []
@@ -467,6 +468,7 @@ class SpotStainDataset(Dataset):
         sample = {
             "anchor": model_input_tensor,
             "positive": model_input_tensor_augmented,
+            "label_vector": binary_spot_presence_vector,
             "cell_id": cell_index
         }
 
