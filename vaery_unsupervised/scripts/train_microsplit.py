@@ -44,7 +44,7 @@ data_module = MicroSplitHCSDataModule(
     crops_per_position=4,
     batch_size=32,
     num_workers=6,
-    split_ratios=(0.8, 0.15, 0.05),
+    split_ratios=(0.8, 0.1, 0.1),
     augmentations=[
         RandRotate(range_x=[90, 90], prob=0.2),
         RandFlip(prob=0.2, spatial_axis=-1),
@@ -156,7 +156,7 @@ trainer.fit(
 
 #%%
 # Or load previous checkpoints
-ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/RM_microsplit_logs/MicroSplit_2025-09-04_13/version_0/checkpoints/last.ckpt"
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/microsplit_logs/MicroSplit_2025-09-04_13/version_0/checkpoints/last.ckpt"
 ckpt = torch.load(ckpt_path, map_location="cuda")
 model.load_state_dict(ckpt['state_dict'], strict=True)
 model.to("cuda")
@@ -207,28 +207,38 @@ axes[1, 2].imshow(unmixed_predictions[40][2], cmap=cmap_nuc)
 #%%
 fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 fig.patch.set_facecolor("black")
+for ax in axes.flatten():
+    ax.set_axis_off()
+axes[0, 0].imshow(targets[40][0][0, 300:700, 300:700], cmap=cmap_mito,
+                  vmin=np.percentile(targets[40][0][0, 300:700, 300:700], 1),
+                  vmax=np.percentile(targets[40][0][0, 300:700, 300:700], 99))
+axes[0, 1].imshow(targets[40][0][1, 300:700, 300:700], cmap=cmap_er,
+                  vmin=np.percentile(targets[40][0][1, 300:700, 300:700], 1),
+                  vmax=np.percentile(targets[40][0][1, 300:700, 300:700], 99))
+axes[0, 2].imshow(targets[40][0][2, 300:700, 300:700], cmap=cmap_nuc,
+                  vmin=np.percentile(targets[40][0][2, 300:700, 300:700], 1),
+                  vmax=np.percentile(targets[40][0][2, 300:700, 300:700], 99))
 
-axes[0, 0].imshow(targets[40][0][0], cmap=cmap_mito,
-                  vmin=np.percentile(targets[40][0][0], 1),
-                  vmax=np.percentile(targets[40][0][0], 99))
-axes[0, 1].imshow(targets[40][0][1], cmap=cmap_er,
-                  vmin=np.percentile(targets[40][0][1], 1),
-                  vmax=np.percentile(targets[40][0][1], 99))
-axes[0, 2].imshow(targets[40][0][2], cmap=cmap_nuc,
-                  vmin=np.percentile(targets[40][0][2], 1),
-                  vmax=np.percentile(targets[40][0][2], 99))
+axes[1, 0].imshow(unmixed_predictions[40][0, 300:700, 300:700], cmap=cmap_mito,
+                  vmin=np.percentile(unmixed_predictions[40][0, 300:700, 300:700], 1),
+                  vmax=np.percentile(unmixed_predictions[40][0, 300:700, 300:700], 99))
+axes[1, 1].imshow(unmixed_predictions[40][1, 300:700, 300:700], cmap=cmap_er,
+                  vmin=np.percentile(unmixed_predictions[40][1, 300:700, 300:700], 1),
+                  vmax=np.percentile(unmixed_predictions[40][1, 300:700, 300:700], 99))
+axes[1, 2].imshow(unmixed_predictions[40][2, 300:700, 300:700], cmap=cmap_nuc,
+                  vmin=np.percentile(unmixed_predictions[40][2, 300:700, 300:700], 1),
+                  vmax=np.percentile(unmixed_predictions[40][2, 300:700, 300:700], 99))
 
-axes[1, 0].imshow(unmixed_predictions[40][0], cmap=cmap_mito,
-                  vmin=np.percentile(unmixed_predictions[40][0], 1),
-                  vmax=np.percentile(unmixed_predictions[40][0], 99))
-axes[1, 1].imshow(unmixed_predictions[40][1], cmap=cmap_er,
-                  vmin=np.percentile(unmixed_predictions[40][1], 1),
-                  vmax=np.percentile(unmixed_predictions[40][1], 99))
-axes[1, 2].imshow(unmixed_predictions[40][2], cmap=cmap_nuc,
-                  vmin=np.percentile(unmixed_predictions[40][2], 1),
-                  vmax=np.percentile(unmixed_predictions[40][2], 99))
 #%%
-
+fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+fig.patch.set_facecolor("black")
+ax.imshow(
+    inputs[40][0][0, 300:700, 300:700],
+    cmap='gray',
+    vmin=np.percentile(inputs[40][0][0, 300:700, 300:700], 1),
+    vmax=np.percentile(inputs[40][0][0, 300:700, 300:700], 99)
+)
+ax.set_axis_off()
 
 
 #%%
@@ -243,8 +253,16 @@ METRICS = [
     "LPIPS",
 ]
 
-# #%%
-metrics_dict = compute_metrics(targets, unmixed_predictions, metrics=METRICS)
+#%%
+# prepare predictions for training
+targets_arr = []
+for target in targets:
+    targets_arr.append(target[0])
+targets_arr = np.array(targets_arr)
+unmixed_predictions_arr = np.array(unmixed_predictions)
+
+#%%
+metrics_dict = compute_metrics(targets_arr, unmixed_predictions_arr, metrics=METRICS)
 show_metrics(metrics_dict)
 
 # %%

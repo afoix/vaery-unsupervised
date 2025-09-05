@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
-from microsplit_reproducibility.utils.paper_metrics import avg_range_inv_psnr, compute_SE, _get_list_of_images_from_gt_pred
+from microsplit_reproducibility.utils.paper_metrics import avg_range_inv_psnr, compute_SE
 from microssim import MicroMS3IM, MicroSSIM
 from numpy.typing import NDArray
 from skimage.measure import pearson_corr_coeff
@@ -108,12 +108,10 @@ def compute_metrics(
     ssim_list = []
     msssim_list = []
     lpips_list = []
-    for ch_idx in range(gt_data[0].shape[-1]):
+    for ch_idx in range(gt_data[0].shape[1]):
         # list of gt and prediction images. This handles both 2D and 3D data. 
         # This also handles when individual images are lists.
-        gt_ch, pred_ch = _get_list_of_images_from_gt_pred(
-            gt_data, pred_unnorm, ch_idx
-        )
+        gt_ch, pred_ch = gt_data[:, ch_idx], pred_unnorm[:, ch_idx]
         
         # PSNR
         if "PSNR" in metrics:
