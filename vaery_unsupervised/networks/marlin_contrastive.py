@@ -1,3 +1,4 @@
+
 import logging
 from typing import Literal
 
@@ -8,6 +9,7 @@ from monai.networks.nets.resnet import ResNetFeatures
 from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
 from torch import Tensor, nn
 from typing_extensions import TypedDict
+from vaery_unsupervised.networks.marlin_utils import detach_sample, render_images
 
 _logger = logging.getLogger("lightning.pytorch")
 
@@ -137,6 +139,8 @@ class ContrastiveModule(LightningModule):
     def on_train_start(self):
         # _logger.debug(f"Training started with {self.encoder.backbone} backbone")
         _logger.debug(f"Training started with {self.encoder} backbone")
+        self.train_examples = {'anchor': [], 'positive': []}
+        self.val_examples = {'anchor': [], 'positive': []}
         super().on_train_start()
 
         # 
@@ -182,6 +186,9 @@ class ContrastiveModule(LightningModule):
             #     loss = self.loss(anchor_proj, positive_proj)
 
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
+        if batch_idx < 4:
+            self.train_examples['anchor'].append(batch['anchor'])
+            self.train_examples['positive'].append(batch['positive'])
         self._log_metrics(loss, anchor, positive, "train")
         return loss
 
@@ -202,9 +209,12 @@ class ContrastiveModule(LightningModule):
         
         #Compute the loss with the projections pairs
         loss = self.loss(anchor_proj, positive_proj)
-
+        
         # NOTE: Use our convenience function to log the metrics otherwise use just self.log()
         self._log_metrics(loss = loss, anchor= anchor_proj,  positive=positive_proj, stage= "val")
+        if batch_idx < 4:
+            self.val_examples['anchor'].append(batch['anchor'])
+            self.val_examples['positive'].append(batch['positive'])
         return loss
     
     def predict_step(
@@ -220,11 +230,18 @@ class ContrastiveModule(LightningModule):
         return anchor_emb, anchor_proj
 
     def on_validation_epoch_end(self):
-        # _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
+        _logger.debug(f"Validation epoch ended with {self.encoder.backbone} backbone")
+        self._log_images(self.val_examples['anchor'], "val")
+        self._log_images(self.val_examples['positive'], "val")
+        self.val_examples.clear()
         super().on_validation_epoch_end()
 
+
     def on_training_epoch_end(self):
-        # _logger.debug(f"Training epoch ended with {self.encoder.backbone} backbone")
+        _logger.debug(f"Training epoch ended with {self.encoder.backbone} backbone")
+        self._log_images(self.train_examples['anchor'], "train")
+        self._log_images(self.train_examples['positive'], "train")
+        self.train_examples.clear()
         super().on_training_epoch_end()
 
     def _log_metrics(
@@ -257,5 +274,12 @@ class ContrastiveModule(LightningModule):
             sync_dist=True,
         )
 
-    def _log_images(self, anchor: Tensor, positive: Tensor, stage: Literal["train", "val"]):
-        NotImplementedError("Logging images is not implemented")
+    def _log_images(self, examples, stage, anchor_or_positive: Literal["anchor", "positive"] = "anchor"):
+        example_numpy = detach_sample(examples,log_samples_per_batch=8)
+        image = render_images(example_numpy)
+        self.logger.experiment.add_image(
+            f"{stage}/{anchor_or_positive}_examples",
+            image,
+            global_step=self.current_epoch,
+            dataformats="HWC",
+        )

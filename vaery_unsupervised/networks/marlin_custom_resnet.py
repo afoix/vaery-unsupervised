@@ -1,9 +1,7 @@
-import warnings
 from typing import Literal
 import torch
 import torch.nn as nn
 from torch import Tensor
-from monai.networks.nets import ResNetFeatures
 
 def projection_mlp(
         in_dims: int,
@@ -59,8 +57,8 @@ class BasicBlock(nn.Module):
         out_ch: int,
         stride: int = 1,
         dilation: int = 1,
-        norm: Literal["group", "batch"] = "group",
-        gn_groups: int = 8,
+        norm: Literal["group", "batch"] = "batch",
+        gn_groups: int = 1,
         drop_path: float = 0.0,
         activation: nn.Module = nn.SiLU(inplace=True),
     ):
@@ -122,22 +120,18 @@ class SmallObjectResNet10Encoder(nn.Module):
     def __init__(
         self,
         in_channels: int = 1,
-        widths: Tuple[int, int, int, int] = (32, 64, 128, 256),
-        feature_stage: Literal["layer3", "layer4"] = "layer3",
-        layer4_dilate: int = 2,
+        widths: Tuple[int, int] = (32, 64),
         norm: Literal["group", "batch"] = "group",
+        stride: int | Tuple[int, int] = 1,
         gn_groups: int = 8,
         drop_path_rate: float = 0.05,  # mild stochastic depth across 4 blocks
-        mlp_hidden_dims: int = 512,
-        projection_dim: int = 128,
+        mlp_hidden_dims: int = 64,
+        projection_dim: int = 32,
         activation: nn.Module = nn.SiLU(inplace=True),
     ):
         super().__init__()
-        assert len(widths) == 4
-        self.feature_stage = feature_stage
-        self.layer4_dilate = max(1, int(layer4_dilate))
         self.act = activation if isinstance(activation, nn.Module) else nn.SiLU(inplace=True)
-
+        self.stride = stride
         # Stem: 3×3, stride=1, no maxpool
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, widths[0], kernel_size=3, stride=1, padding=1, bias=False),
@@ -146,45 +140,36 @@ class SmallObjectResNet10Encoder(nn.Module):
         )
 
         # ResNet-10 uses 1 basic block per stage
-        depths = [1, 1, 1, 1]
+        # depths = [1, 1, 1, 1]
+        depths = [1, 1]
         total_blocks = sum(depths)
         # linearly increase drop-path over blocks
         dp_rates = [drop_path_rate * i / max(1, (total_blocks - 1)) for i in range(total_blocks)]
 
-        c1, c2, c3, c4 = widths
+        c1, c2 = widths
         b = 0  # block index for dp rate schedule
 
         # layer1 (no downsample, no dilation)
         self.layer1 = self._make_layer(
-            in_ch=c1, out_ch=c1, blocks=depths[0], stride=1, dilation=1,
+            in_ch=c1, out_ch=c1, blocks=depths[0], stride=self.stride, dilation=1,
             norm=norm, gn_groups=gn_groups, dp_rates=dp_rates[b:b + depths[0]],
         )
         b += depths[0]
 
+        self.inter_layer_maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=1)        
+
         # layer2 (downsample to 75×75 for 150×150 input)
         self.layer2 = self._make_layer(
-            in_ch=c1, out_ch=c2, blocks=depths[1], stride=2, dilation=1,
+            in_ch=c1, out_ch=c2, blocks=depths[1], stride=self.stride, dilation=1,
             norm=norm, gn_groups=gn_groups, dp_rates=dp_rates[b:b + depths[1]],
         )
         b += depths[1]
 
-        # layer3 (downsample to ~38×38)
-        self.layer3 = self._make_layer(
-            in_ch=c2, out_ch=c3, blocks=depths[2], stride=2, dilation=1,
-            norm=norm, gn_groups=gn_groups, dp_rates=dp_rates[b:b + depths[2]],
-        )
-        b += depths[2]
-
-        # layer4 (keep stride=1; use dilation to expand RF without shrinking map)
-        self.layer4 = self._make_layer(
-            in_ch=c3, out_ch=c4, blocks=depths[3], stride=1, dilation=self.layer4_dilate,
-            norm=norm, gn_groups=gn_groups, dp_rates=dp_rates[b:b + depths[3]],
-        )
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Embedding dimension depends on which stage we pool from
-        self.embedding_dim = c4 if feature_stage == "layer4" else c3
+        self.embedding_dim = c2
 
         self.projection = nn.Sequential(
             nn.Linear(self.embedding_dim, mlp_hidden_dims),
@@ -237,12 +222,9 @@ class SmallObjectResNet10Encoder(nn.Module):
 
         x = self.stem(x)
         x = self.layer1(x)       # ~150×150
+        x = self.inter_layer_maxpool(x)
         x = self.layer2(x)       # ~75×75
-        feat3 = self.layer3(x)   # ~38×38
-        feat4 = self.layer4(feat3)  # ~38×38 (dilated)
 
-        feature_map = feat4 if self.feature_stage == "layer4" else feat3
-
-        emb = self.avgpool(feature_map).flatten(1)
+        emb = self.avgpool(x).flatten(1)
         proj = self.projection(emb)
         return emb, proj
