@@ -14,12 +14,12 @@ seed_everything(1010)
 def main():
     #torch.set_float32_matmul_precision("high")
 
-    model_name = "sal_model_v2_z1024_b32_e7_sz64"
+    model_name = "sal_model_v2_z2048_b32_e5_sz64_5ch"
 
     dataset = SalBrainDataModule(
         batch_size=32,
         patch_size=(64, 64, 64),
-        num_workers=96,
+        num_workers=16,
         pin_memory=True,
         persistent_workers=True,
     )
@@ -33,12 +33,11 @@ def main():
     print(f"Batch shape: {batch_shape}")
 
     model = SalamanderVAE(
-        beta=1e-7,
+        beta=1e-5,
         matrix_size=batch_shape[3],
-        latent_size=1024,
+        latent_size=2048,
         n_chan=batch_shape[1],
         z_dir=f"/home/jnc2161/mbl/{model_name}_latent",
-        final_dec_activation=""
     )
 
     logger_tb = TensorBoardLogger(save_dir="/home/jnc2161/mbl/logs", name=model_name)
@@ -59,7 +58,7 @@ def main():
     trainer.fit(model=model, 
                 train_dataloaders=train_data, 
                 val_dataloaders=val_data) 
-                #ckpt_path=f"/home/jnc2161/mbl/logs/{model_name}/version_0/checkpoints/epoch=4-step=250.ckpt")
+                #ckpt_path="/home/jnc2161/mbl/logs/sal_model_v2_z1024_b32_e7_sz64/version_2/checkpoints/epoch=44-step=2250.ckpt")
 
 
 if __name__ == "__main__":

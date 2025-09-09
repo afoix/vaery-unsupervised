@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import nn
 
 _logger = logging.getLogger("lightning.pytorch")
-# _logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.DEBUG)
 
 class ResizeConv3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, scale_factor, mode='nearest'):
@@ -148,13 +148,14 @@ class ResNet18Dec(nn.Module):
     SIGMOID(Conv1 64 -> nc)
     """
 
-    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=32, matrix_size=32):
+    def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, out_features=32, matrix_size=32, final_dec_activation="tanh"):
         super().__init__()
         self.in_features = 512
         self.z_dim = z_dim
         self.nc = nc
         self.out_features = out_features
         self.matrix_size = matrix_size
+        self.final_dec_activation = final_dec_activation
 
         up_scale = matrix_size // 16
 
@@ -175,7 +176,7 @@ class ResNet18Dec(nn.Module):
         self.in_features = features
         return nn.Sequential(*layers)
 
-    def forward(self, z, final_dec_activation="tanh"):
+    def forward(self, z):
 
         #in_mat_sz = int(64/self.matrix_size)
 
@@ -191,10 +192,14 @@ class ResNet18Dec(nn.Module):
         # _logger.debug(f"x after view zdim x 2 x 2 x 2 {x.shape}")
 
         x = self.layer4(x)
+        _logger.debug(f"x after layer 4 {x.shape}")
         x = self.layer3(x)
+        _logger.debug(f"x after layer 3 {x.shape}")
         x = self.layer2(x)
+        _logger.debug(f"x after layer 2 {x.shape}")
         x = self.layer1(x)
-        if final_dec_activation == "tanh":
+        _logger.debug(f"x after layer 1 {x.shape}")
+        if self.final_dec_activation == "tanh":
             x = torch.tanh(self.conv1(x))
 
         return x
@@ -204,8 +209,8 @@ class VAEResNet18(nn.Module):
     
     def __init__(self, nc, z_dim, matrix_size):
         super().__init__()
-        self.encoder = ResNet18Enc(nc=nc, z_dim=z_dim)
-        self.decoder = ResNet18Dec(nc=nc, z_dim=z_dim)
+        self.encoder = ResNet18Enc(nc=nc, z_dim=z_dim, matrix_size=matrix_size)
+        self.decoder = ResNet18Dec(nc=nc, z_dim=z_dim, matrix_size=matrix_size)
 
     def forward(self, x):
         mean, logvar = self.encoder(x)

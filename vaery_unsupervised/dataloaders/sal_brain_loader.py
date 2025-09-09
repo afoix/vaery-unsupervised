@@ -92,7 +92,7 @@ class SalBrainDataModule(L.LightningDataModule):
                           persistent_workers=self.persistent_workers)
 
     def test_dataloader(self):
-        DataLoader(self.dataset, 
+        return DataLoader(self.dataset, 
                           shuffle=False, 
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
@@ -127,7 +127,8 @@ class SalBrainDataset(Dataset):
 
         self.data_path = data_path
         self.patch_size = patch_size
-        self.include = [0, 2, 3, 11, 18, 19, 41, 50, 63] # neurotransmitter related
+        self.include = [0, 41, 50, 63, 66]
+        #self.include = [0, 2, 3, 11, 18, 19, 41, 50, 63] # neurotransmitter related
         #self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
         self.exclude_channels = [c for c in range(68) if c not in self.include]
 
@@ -205,7 +206,8 @@ class SalBrainDatasetForTest(Dataset):
 
         self.data_path = data_path
         self.patch_size = patch_size
-        self.include = [0, 2, 3, 11, 18, 19, 41, 50, 63] # neurotransmitter related
+        #self.include = [0, 50, 63]
+        self.include = [0, 41, 50, 63, 66] # neurotransmitter related
         #self.exclude_channels = [1, 4, 5] # these aren't removed until the __get__ function
         self.exclude_channels = [c for c in range(68) if c not in self.include]
 
