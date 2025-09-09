@@ -5,16 +5,20 @@ import torch.nn.functional as F
 from torch import nn
 
 _logger = logging.getLogger("lightning.pytorch")
-_logger.setLevel(logging.DEBUG)
+#_logger.setLevel(logging.DEBUG)
 
 class ResizeConv3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, scale_factor, mode='nearest'):
         super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
         self.scale_factor = scale_factor
         self.mode = mode
         self.conv = nn.Conv3d(in_channels, out_channels, kernel_size, stride=1, padding=kernel_size//2)
     
     def forward(self, x):
+
         x = F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
         x = self.conv(x)
         return x
@@ -31,7 +35,7 @@ class BasicBlockEnc(nn.Module):
         self.conv2 = nn.Conv3d(features, features, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm3d(features)
 
-        if stride == 1:
+        if stride == 1: # No resize needed
             self.shortcut = nn.Identity()
         else:
             self.shortcut = nn.Sequential(
@@ -82,11 +86,11 @@ class ResNet18Enc(nn.Module):
     Conv1 nc -> 64 features
     BatchNorm
     BASIC BLOCKS:
-    layer1 64 -> 64 
-    layer2 64 -> 128
-    layer3 128 -> 256
-    layer4 256 -> 512
-    TO LATENT SPACE:
+    layer1: features 64 -> 64, spatial no change
+    layer2: features 64 -> 128, spatial downsample 2x
+    layer3: features 128 -> 256, spatial downsample 2x
+    layer4: features 256 -> 512, spatial downsample 2x
+    FLATTEN: (B, 512, 2, 2, 2) -> (B, 512*S*S*S) where S is matrix_size/16
     linear 512 -> z_dim
     """
     def __init__(self, num_Blocks=[2,2,2,2], z_dim=10, nc=3, matrix_size=32):
@@ -100,12 +104,12 @@ class ResNet18Enc(nn.Module):
                                padding=1, bias=False)
         
         self.bn1 = nn.BatchNorm3d(64)
-        self.layer1 = self._make_layer(BasicBlockEnc, 64, num_Blocks[0], stride=1) # 32->16 ds2
-        self.layer2 = self._make_layer(BasicBlockEnc, 128, num_Blocks[1], stride=2) # 16->8
-        self.layer3 = self._make_layer(BasicBlockEnc, 256, num_Blocks[2], stride=2) # 8->4
-        self.layer4 = self._make_layer(BasicBlockEnc, 512, num_Blocks[3], stride=2) # 4->2
-        # Issue: z = (B,z_dim*2, 2, 2, 2)
-        #self.linear = nn.Conv3d(512, 2 * z_dim, kernel_size=1)
+
+        self.layer1 = self._make_layer(BasicBlockEnc, 64, num_Blocks[0], stride=1)
+        self.layer2 = self._make_layer(BasicBlockEnc, 128, num_Blocks[1], stride=2)
+        self.layer3 = self._make_layer(BasicBlockEnc, 256, num_Blocks[2], stride=2)
+        self.layer4 = self._make_layer(BasicBlockEnc, 512, num_Blocks[3], stride=2)
+
         self.linear = nn.Linear(int(512 * (matrix_size/16)**3), 2 * z_dim)
 
     def _make_layer(self, BasicBlockEnc, features, num_Blocks, stride):
@@ -165,7 +169,10 @@ class ResNet18Dec(nn.Module):
         self.layer2 = self._make_layer(BasicBlockDec, 64, num_Blocks[1], stride=2)
         self.layer1 = self._make_layer(BasicBlockDec, 64, num_Blocks[0], stride=1)
 
-        self.conv1 = ResizeConv3d(64, nc, kernel_size=3, scale_factor=2)
+        self.conv1 = ResizeConv3d(in_channels=64, 
+                                  out_channels=nc, 
+                                  kernel_size=3, 
+                                  scale_factor=2)
         #self.final_linear = torch.nn.Linear(32**3, self.out_features**3)
 
     def _make_layer(self, BasicBlockDec, features, num_Blocks, stride):
@@ -201,6 +208,10 @@ class ResNet18Dec(nn.Module):
         _logger.debug(f"x after layer 1 {x.shape}")
         if self.final_dec_activation == "tanh":
             x = torch.tanh(self.conv1(x))
+            _logger.debug(f"x after conv1 + tanh {x.shape}")
+        else:
+            x = self.conv1(x)
+            _logger.debug(f"x after conv1 {x.shape}")
 
         return x
     
