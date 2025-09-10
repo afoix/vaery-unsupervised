@@ -1,4 +1,3 @@
-#%%
 import pandas as pd
 import numpy as np
 import h5py
@@ -70,25 +69,32 @@ def compute_mean_and_std_over_sample(
     std_sample = weighted_std / n_images
     return n_images, mean_sample, std_sample
 
-#%%
-# from pathlib import Path
-# HEADPATH = Path('/mnt/efs/aimbl_2025/student_data/S-GL/')
-# KEY_FL = 'fluorescence'
-# KEY_SEG = 'segmentation' 
-# metadata = pd.read_pickle(HEADPATH / '2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded.pkl')
 
-# #%%
-# n_images, mean_sample, std_sample = compute_mean_and_std_over_sample(
-#     data_path=HEADPATH / 'Ecoli_lDE20_Exps-0-1/',
-#     metadata=metadata
-# )
-# print(n_images, mean_sample, std_sample)
-# # %%
-# N_IMAGES = 15290
-# WEIGHTED_MEAN = 200183.2210227729
-# WEIGHTED_STD = 175738.43323474968
+def filter_metadata_by_grna(
+    metadata_filename: str,
+    output_filename: str,
+    grna_ids_to_keep: list[int],
+    include_time: bool
+) -> pd.DataFrame:
+    '''
+    Filter the metadata DataFrame to include only the specified gRNA IDs.
+    '''
+    if not include_time:
+        metadata = (pd
+            .read_pickle(metadata_filename)
+            .groupby('gene_grna_trench_index')
+            .last()
+            .reset_index()
+        )
+    else:
+        metadata = (pd
+            .read_pickle(metadata_filename)
+        )
 
-# SAMPLED_MEAN = WEIGHTED_MEAN/N_IMAGES
-# SAMPLED_STD = WEIGHTED_STD/N_IMAGES
+    metadata_filtered = (metadata
+        .loc[metadata['oDEPool7_id'].isin(grna_ids_to_keep)]
+        .reset_index(drop=True)
+    )
+    metadata_filtered.to_pickle(output_filename)
+    return metadata_filtered
 
-# print(SAMPLED_MEAN, SAMPLED_STD)

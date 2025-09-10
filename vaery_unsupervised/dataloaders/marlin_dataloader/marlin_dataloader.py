@@ -1,52 +1,82 @@
-#%%
 import lightning as L
-from pathlib import Path
-from typing import Callable, Literal, Sequence, Optional
+from typing import Callable, Optional
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import h5py
 import numpy as np
-import matplotlib.pyplot as plt
-import random
 
 T = 60 # Number of timepoints
 KEY_FL = 'fluorescence'
 KEY_SEG = 'segmentation'
+USE_ALL_T = True
 
-from monai.transforms import (
-    Compose,
-    NormalizeIntensity,
-    Lambda,
-)
+def stack_image_horizontally(img):
+    """
+    Stacks an image horizontally until its total width is equal to its height.
+    Assumes the image is a 2D NumPy array.
+    """
+    h, w = img.shape
+    
+    if w >= h:
+        raise ValueError("Image width must be less than height.")    
+    # Calculate how many full repetitions are needed
+    repetitions = h // w
+    # Use hstack to stack the image `repetitions` times
+    stacked_img = np.hstack([img] * repetitions)
+    # Calculate the remaining width to make it equal to height
+    remaining_width = h % w
+    if remaining_width > 0:
+        # Get the slice of the original image needed for the remaining width
+        remaining_slice = img[:, :remaining_width]
+        # Stack the slice onto the repeated image
+        stacked_img = np.hstack([stacked_img, remaining_slice])
+    return stacked_img
 
 def center_image(img):
+    '''
+    Centers the image by padding it to the largest dimension.
+    Pads with zeros
+    '''
     h, w = img.shape
-    D = np.max([h, w])# TODO: Pass constants?
+    D = np.max([h, w])
     out = np.zeros((D, D), dtype=img.dtype)
     y_offset = (D - h) // 2
     x_offset = (D - w) // 2
     out[y_offset:y_offset+h, x_offset:x_offset+w] = img
     return out
 
-# Shift parameteres
-MEAN_OVER_DATASET = 13
-STD_OVER_DATASET = 11
+def find_image_in_hdf5_file(hdf5_headpath,
+    gene_id, grna_id, grna_file_trench_index, timepoint
+):
+    """
+    Finds a single image in an HDF5 file.
+    """
+    filename = hdf5_headpath / f"{gene_id}/{grna_id}.hdf5"
+    with h5py.File(filename, 'r') as f:
+        img_fl = f[KEY_FL][grna_file_trench_index, timepoint]
+        # img_seg = f[KEY_SEG][grna_file_trench_index, timepoint]
+    return img_fl
 
-transforms = Compose([
-    NormalizeIntensity(
-        subtrahend=MEAN_OVER_DATASET,
-        divisor=STD_OVER_DATASET,
-        nonzero=False,
-        channel_wise=False,
-        dtype = np.float32,
-    ),
-    # Lambda(func=center_image,
-    #        inv_func=None,
-    #        track_meta=True)
-])
+def find_images_anchor_pos_in_hdf5_file(hdf5_headpath,
+    gene_id, grna_id, grna_file_trench_index, timepoint
+):
+    """
+    Finds the anchor and positive images in an HDF5 file based on the given parameters.
+    The positive is the next timepoint (modulo T to wrap around).
+    """
+    filename = hdf5_headpath / f"{gene_id}/{grna_id}.hdf5"
+    with h5py.File(filename, 'r') as f:
+        img_pos = f[KEY_FL][grna_file_trench_index, timepoint]
+        img_anc = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T]
+        # img_pos = f[KEY_FL][grna_file_trench_index, timepoint,:,5:15]
+        # img_anc = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T,:,5:15]
+        
+    return img_anc, img_pos
 
 class MarlinDataset(Dataset):
+    """
+    A PyTorch Dataset for loading images from HDF5 files based on metadata.
+    """
     def __init__(self,
                  data_path: str,
                  metadata: pd.DataFrame,
@@ -61,36 +91,69 @@ class MarlinDataset(Dataset):
  
     def __getitem__(self, index: int):
         metadata_sample = self.metadata.iloc[index]
-        # Get indices to find files
-        gene_id, grna_id, grna_file_trench_index, timepoint = metadata_sample[['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
-        # Using only the next timepoint, reset to the first timepoint if chose the last timepoint
-        filename = self.data_path / f"{gene_id}/{grna_id}.hdf5"
-        with h5py.File(filename, 'r') as f:
-            img_fl_anchor = f[KEY_FL][grna_file_trench_index, timepoint]
-            img_fl_pos = f[KEY_FL][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
-            # img_seg_anchor = f[KEY_SEG][grna_file_trench_index, timepoint]
-            # img_seg_pos = f[KEY_SEG][grna_file_trench_index, (timepoint+1)%T] # NO CORRECTION
+        gene_id, grna_id, grna_file_trench_index, timepoint =(metadata_sample
+            [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+        )
+        if USE_ALL_T:
+            # Use next timepoint as positive
+            img_fl_anchor, img_fl_pos = find_images_anchor_pos_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=gene_id,
+                grna_id=grna_id,
+                grna_file_trench_index=grna_file_trench_index,
+                timepoint=timepoint
+            )
+        else:
+        # Use last timepoint, sample another trench as positive
+            img_fl_anchor = find_image_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=gene_id,
+                grna_id=grna_id,
+                grna_file_trench_index=grna_file_trench_index,
+                timepoint=-1
+            )
 
-        # Set your desired output size
-        # TODO DECIDE IF INCLUDING SEG
-        # TODO make this a transform
-        img_fl_anchor = center_image(img_fl_anchor)
-        img_fl_pos = center_image(img_fl_pos)
-        # img_seg_anchor = self.center_image(img_seg_anchor)
-        # img_seg_pos = self.center_image(img_seg_pos)
+            metadata_pos = (self.metadata
+                .loc[lambda df_: (df_['gene_id'] == gene_id) 
+                    & (df_['grna_file_trench_index'] != grna_file_trench_index)]
+                .sample(n=1)
+                .iloc[0]
+            )
 
-        img_fl_anchor = img_fl_anchor[None,None,...]
-        img_fl_pos = img_fl_pos[None,None,...]
+            pos_gene_id, pos_grna_id, pos_grna_file_trench_index, pos_timepoint = (metadata_pos
+                [['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']]
+            )
+
+            img_fl_pos = find_image_in_hdf5_file(
+                hdf5_headpath=self.data_path,
+                gene_id=pos_gene_id,
+                grna_id=pos_grna_id,
+                grna_file_trench_index=pos_grna_file_trench_index,
+                timepoint=-1
+            )
+
+        # standardize the pixel values and convert to float 32
+        img_fl_anchor = img_fl_anchor.astype(np.float32)
+        img_fl_pos = img_fl_pos.astype(np.float32)
+
+        # Normalize to roughly between 0 and 1 using the 2nd and 98th percentiles
+        perc_2_anchor = np.percentile(img_fl_anchor, 2)
+        perc_98_anchor = np.percentile(img_fl_anchor, 98)
+        img_fl_anchor = (img_fl_anchor - perc_2_anchor) / (perc_98_anchor - perc_2_anchor)
+
+        perc_2_pos = np.percentile(img_fl_pos, 2)
+        perc_98_pos = np.percentile(img_fl_pos, 98)
+        img_fl_pos = (img_fl_pos - perc_2_pos) / (perc_98_pos - perc_2_pos)
+
+        # Adding fake channel dimension
+        img_fl_anchor = img_fl_anchor[None,...]
+        img_fl_pos = img_fl_pos[None,...]
         
-        if self.transform: # TODO ADD CENTERING HERE!
-            img_fl_anchor = self.transform(img_fl_anchor)
-            img_fl_pos = self.transform(img_fl_pos)
+        imgs = {'id': metadata_sample.name, 'anchor': img_fl_anchor, 'positive':img_fl_pos}
+        if self.transform:
+            imgs = self.transform(imgs)
 
-        # TODO: CASE FOR TESTING/PREDICTING
-        # if self.train_mode:
-        return {'anchor': img_fl_anchor, 'positive': img_fl_pos}
-        # else:
-            # return {'anchor': img_fl_anchor}
+        return imgs
         
 class MarlinDataModule(L.LightningDataModule):
     def __init__(
@@ -114,13 +177,13 @@ class MarlinDataModule(L.LightningDataModule):
 
         # Open the metadata
         COLS_TO_LOAD = ['gene_id', 'oDEPool7_id', 'grna_file_trench_index', 'timepoints']
-        self.metadata = (pd
-            .read_pickle(self.metadata_path)
+        self.metadata = (
+            pd.read_pickle(self.metadata_path)
             [COLS_TO_LOAD]
         )
 
     def _prepare_data(self):
-        # Shuffle and split the metadata
+        # Shuffle and split the metadata before the first call to setup
         indices_shuffled = np.random.permutation(self.metadata.index.tolist())
         indices_train = indices_shuffled[:int(len(indices_shuffled) * self.split_ratio)]
         indices_val = indices_shuffled[int(len(indices_shuffled) * self.split_ratio):]
@@ -128,10 +191,15 @@ class MarlinDataModule(L.LightningDataModule):
         self.metadata_val = self.metadata.loc[indices_val]
 
     def setup(self, stage):
-        if stage == 'fit': # includes validation
-            self.dataset = MarlinDataset(
+        if stage == 'fit':
+            self.train_dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata_train,
+                transform=self.transforms
+            )
+            self.val_dataset = MarlinDataset(
+                data_path=self.data_path,
+                metadata=self.metadata_val,
                 transform=self.transforms
             )
         elif stage == 'validate':
@@ -140,27 +208,34 @@ class MarlinDataModule(L.LightningDataModule):
                 metadata=self.metadata_val,
                 transforms=self.transforms
             )
-        else: # 'test' or 'predict'
+        elif stage == 'test':
+            self.dataset = MarlinDataset(
+                data_path=self.data_path,
+                metadata=self.metadata_val,
+                transform=None,
+            )
+        elif stage == 'predict':
             self.dataset = MarlinDataset(
                 data_path=self.data_path,
                 metadata=self.metadata,
-                transform=self.transforms
+                transform=None,
             )
+        else:
+            raise ValueError("Invalid stage for setup. Use 'fit', 'validate', 'test', or 'predict'.")
 
     def train_dataloader(self): 
         return DataLoader(
-            self.dataset,
-            shuffle=False,
+            self.train_dataset,
+            shuffle=True,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
             prefetch_factor=self.prefetch_factor
         )
 
-    # Whenever called, I need to change mode
     def val_dataloader(self):
         return DataLoader(
-            dataset=self.dataset,
+            dataset=self.val_dataset,
             shuffle=False,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
