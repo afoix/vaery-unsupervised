@@ -22,9 +22,9 @@ class BasicBlockEnc(nn.Module):
 
         planes = in_planes*stride #
 
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False) #stride of 2 will do every other pixel, you halve your spatial dimension
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False) #stride of one will cover every pixel
         self.bn2 = nn.BatchNorm2d(planes)
 
         if stride == 1:
@@ -81,17 +81,17 @@ class ResNet18Enc(nn.Module):
         self.conv1 = nn.Conv2d(nc, 64, kernel_size=3, stride=2, padding=1, bias=False) #first a normal cnov block w 64 kernel
         self.bn1 = nn.BatchNorm2d(64) #after first conv you have 64 layers, you multiply together the RGB channels
         self.layer1 = self._make_layer(BasicBlockEnc, 64, num_Blocks[0], stride=1)  #BasicBlockenc takes stride, uses it to determine the output number of 
-        self.layer2 = self._make_layer(BasicBlockEnc, 128, num_Blocks[1], stride=2)
+        self.layer2 = self._make_layer(BasicBlockEnc, 128, num_Blocks[1], stride=2) #If stride here were four,
         self.layer3 = self._make_layer(BasicBlockEnc, 256, num_Blocks[2], stride=2)
         self.layer4 = self._make_layer(BasicBlockEnc, 512, num_Blocks[3], stride=2)
         self.linear = nn.Conv2d(512, 2 * z_dim, kernel_size=1)
 
     def _make_layer(self, BasicBlockEnc, planes, num_Blocks, stride): #creates a sequential list of the BasicBlockDec
-        strides = [stride] + [1]*(num_Blocks-1) #stride in first layer is 1, second - fourth is strides 2
+        strides = [stride] + [1]*(num_Blocks-1) #stride in first layer is 1, all other layers with num_blocks 2 = [1,1] (with numblocks 3, [2,1,1], [1]*2 = [1,1])
         layers = []
         for stride in strides: 
             layers += [BasicBlockEnc(self.in_planes, stride)] #Adds a layer for each BasicBlockEncoder
-            self.in_planes = planes
+            self.in_planes = planes #this allows you to iteratively change your input planes
         return nn.Sequential(*layers)
 
     def forward(self, x):

@@ -7,7 +7,7 @@ digits = datasets.load_digits()
 digits.keys()
 #%%
 # Create a SummaryWriter log directory
-writer = SummaryWriter("~/embedding_demo")
+writer = SummaryWriter("/mnt/efs/aimbl_2025/student_data/S-KM/tensorboarddemo/embedding_demo") #could save the embedding thing to the model checkpoint
 images = digits['images']
 # Example embeddings: 100 samples, 3-dimensional
 embeddings = images.reshape(images.shape[0],images.shape[1]*images.shape[2])
@@ -25,3 +25,4 @@ writer.add_embedding(
 )
 
 writer.close()
+# %%

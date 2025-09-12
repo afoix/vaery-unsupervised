@@ -4,7 +4,7 @@ import base64
 import seaborn as sns
 from dash import dcc, html, Input, Output, no_update, Dash
 import plotly.graph_objects as go
-
+import torch
 from PIL import Image
 import numpy as np
 from matplotlib.colors import to_hex
@@ -316,3 +316,47 @@ def np_image_to_base64(im_matrix):
     encoded_image = base64.b64encode(buffer.getvalue()).decode()
     im_url = "data:image/jpeg;base64, " + encoded_image
     return im_url
+#%%
+
+from sklearn.decomposition import PCA
+
+def plot_pca_reconstructions(
+        model_decoder,
+        model_device,
+        latent_space,
+        n_images = 16,
+        whiten=True,
+):
+    components = [0,1]
+
+    pca = PCA(n_components=len(components),whiten=whiten)
+    transformed = pca.fit_transform(latent_space)
+    min_pcs = np.min(transformed[:,components],axis=0)
+    max_pcs = np.max(transformed[:,components],axis=0)
+    grid_pc1, grid_pc2 = np.meshgrid(*np.linspace(min_pcs,max_pcs,n_images).T)
+    reshape = (n_images*n_images,2)
+    
+    both_values_grid = np.concat((grid_pc1[:,:,np.newaxis],grid_pc2[:,:,np.newaxis]),axis=-1)
+    backtransformed_latents = pca.inverse_transform(both_values_grid.reshape(reshape))
+    #return backtransformed_latents
+
+    reconstructions = model_decoder(
+        torch.Tensor(
+            backtransformed_latents
+        ).to(model_device)
+    ).detach().cpu().numpy()
+    reconstruction_image_shape = reconstructions.shape[1:]
+    image_grid = reconstructions.reshape(
+        (
+            n_images,
+            n_images,
+            *reconstruction_image_shape
+        )
+    )
+    rows = []
+    for row in image_grid:
+        concat = np.concatenate(row,axis = -1)
+        rows.append(concat)
+    final = np.moveaxis(np.concatenate(rows,axis=-2),0,-1)
+
+    return final
