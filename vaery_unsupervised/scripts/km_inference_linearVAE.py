@@ -50,7 +50,7 @@ for batch in loader:
 #%%
 
 #%%
-checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/linear_VAE_latentsize_512/version_0/checkpoints/epoch=97-step=4214.ckpt"
+checkpoint_path = "/mnt/efs/aimbl_2025/student_data/S-KM/logs/modelv2_1_perimagenorm_norotation_ls512_b1e-6/version_0/checkpoints/epoch=170-step=3762.ckpt"
 model = SpatialVAE_Linear.load_from_checkpoint(checkpoint_path=checkpoint_path, strict = True)
 
 #%% Compact model loading with error handling

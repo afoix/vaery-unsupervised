@@ -15,7 +15,7 @@ from vaery_unsupervised.plotting_utils import plot_pca_reconstructions
 import matplotlib.pyplot as plt
 import pandas as pd
 
-data_loc = Path("/mnt/efs/aimbl_2025/student_data/S-KM")
+data_loc = Path("/mnt/efs/aimbl_2025/student_data/S-KM/test_artefacts_kati_byplate_ShapeEmbedBIC")
 latents = np.load(data_loc/"test_latent_space.npy")
 latents
 #%%

@@ -40,6 +40,7 @@ transform_input = [
         std = 1
     ),
 ]
+#would be best to have a masking transform, and then to put a normalization
 
 dataset_zarr = SpatProteoDatasetZarr(
     out_path/"converted_crops_with_metadata.zarr",
@@ -68,11 +69,11 @@ for i,batch in enumerate(loader):
     break
 # %%
 batch["input"][:,[1,2,3],:,:].shape
-model_name = "linear_VAE_latentsize_1024_nucmembs_attempt2"
+model_name = "linear_VAE_ls512_beta0.1"
 latentspace_path = Path(f"/mnt/efs/aimbl_2025/student_data/S-KM/latentspaces/{model_name}")
 latentspace_path.mkdir(exist_ok=True)
 
-spatialmodel = SpatialVAE_Linear(n_chan=3,latent_size= 1024, lr = 0.001, beta = 1e-17, latentspace_dir = latentspace_path, channels_selection = [1,2,3])
+spatialmodel = SpatialVAE_Linear(n_chan=3,latent_size= 512, lr = 0.00001, beta = 0.1, latentspace_dir = latentspace_path, channels_selection = [1,2,3])
 
 
 #%%
@@ -85,7 +86,7 @@ logger = TensorBoardLogger(save_dir=logging_path, name = model_name)
 def main(*args, **kwargs):
 
     trainer = lightning.Trainer(
-        max_epochs = 100, 
+        max_epochs = 50, 
         accelerator = "gpu", 
        # precision = "16-mixed", 
         logger=logger,
