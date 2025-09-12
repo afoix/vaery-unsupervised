@@ -1,0 +1,829 @@
+    # Extract both embeddings and projections
+#%%
+import lightning as L
+from typing import Callable
+import numpy as np
+import pytorch_lightning as pl
+import torch
+from iohub import open_ome_zarr
+from iohub.ngff import Position
+from monai.data import set_track_meta
+from monai.transforms import Compose, ToTensord
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
+from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop
+import logging
+from typing import Literal
+import torch.nn.functional as F
+from lightning import LightningModule
+from monai.networks.nets.resnet import ResNetFeatures
+from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
+from torch import Tensor, nn
+from typing_extensions import TypedDict
+
+from vaery_unsupervised.dataloaders.hcs_dataloader_ryan import HCSDataModule
+from vaery_unsupervised.networks.hcs_contrastive import ResNetEncoder, ContrastiveModule
+from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks import ModelCheckpoint
+from pathlib import Path
+import torchview
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+#%%
+#Load data module
+ome_zarr_path = "/mnt/efs/aimbl_2025/student_data/S-RM/full_dataset/RM_project_ome2.zarr"
+
+data_module = HCSDataModule(
+        ome_zarr_path=ome_zarr_path,
+        source_channel_names=['mito','er','nuclei'],
+        weight_channel_name='nuclei',
+        crop_size=(128, 128),
+        crops_per_position=4,
+        batch_size=64,
+        num_workers=6,
+        split_ratio=0.8,
+        normalization_transform=[],
+        augmentations=[]
+    )
+
+data_module.setup(stage='val')
+#%%
+
+val_loader = data_module.val_dataloader()
+
+#%%
+
+ckpt_path = "/mnt/efs/aimbl_2025/student_data/S-RM/logs/contrastive_first/version_36/checkpoints/last.ckpt"
+
+hcs_encoder_config = {
+    "backbone": "resnet18",
+    "in_channels": 3,
+    "spatial_dims": 2,
+    "embedding_dim": 512,
+    "mlp_hidden_dims": 256,#256 originally 768
+    "projection_dim": 64,#64 originally 128
+    "pretrained": False,
+}
+hcs_encoder = ResNetEncoder(**hcs_encoder_config)
+
+model = ContrastiveModule.load_from_checkpoint(
+    ckpt_path,
+    encoder=hcs_encoder,
+    loss=SelfSupervisedLoss(NTXentLoss(temperature=0.07)),
+    lr=1e-4,
+)
+model = model.cuda()
+model.eval()
+
+#%% 
+#for plotting projections
+# all_emb, all_proj, all_pos_info = [], [], []
+
+# with torch.no_grad():
+#     for batch in val_loader:
+#         emb, proj = model.encoder(batch["anchor"].cuda())
+#         all_emb.append(emb.cpu())
+#         all_proj.append(proj.cpu())
+#         all_pos_info.extend(batch["pos_info"])  # <-- collect position info here
+
+# # concatenate tensors into numpy arrays
+# all_emb = torch.cat(all_emb, dim=0).numpy()
+# all_proj = torch.cat(all_proj, dim=0).numpy()
+# #%%
+# import pandas as pd
+
+# # Make DataFrame from all_proj
+# proj_df = pd.DataFrame(all_proj, columns=[f"proj_{i}" for i in range(all_proj.shape[1])])
+
+# # Make DataFrame for pos info
+# pos_df = pd.DataFrame(all_pos_info, columns=["pos_info"])
+# pos_df[["row", "col", "field"]] = pos_df["pos_info"].str.split("/", expand=True)
+
+# # Combine projections and position info into one table
+# full_df = pd.concat([proj_df, pos_df], axis=1)
+
+# # Optional: convert row/col/field to integers
+# full_df["row"] = full_df["row"].astype(int)
+# full_df["col"] = full_df["col"].astype(int)
+# full_df["field"] = full_df["field"].astype(int)
+
+# annotations_path= '/mnt/efs/aimbl_2025/student_data/S-RM'
+
+# # Load annotation CSV
+# annotations = pd.read_csv(f"{annotations_path}/annotations.csv")
+# annotations = annotations.rename(columns={'row_num': 'row', 'column': 'col'})
+
+# # Merge 'gene' into full_df
+# full_df = full_df.merge(annotations[['gene', 'col','row']], on=['row', 'col'], how='left')
+
+# # Check
+# full_df.info()
+
+#%%
+#for plotting embeddings
+all_emb, all_proj, all_pos_info = [], [], []
+
+with torch.no_grad():
+    for batch in val_loader:
+        emb, proj = model.encoder(batch["anchor"].cuda())
+        all_emb.append(emb.cpu())
+        all_proj.append(proj.cpu())
+        all_pos_info.extend(batch["pos_info"])  # <-- collect position info here
+
+# concatenate tensors into numpy arrays
+all_emb = torch.cat(all_emb, dim=0).numpy()
+all_proj = torch.cat(all_proj, dim=0).numpy()
+#%%
+import pandas as pd
+
+# Make DataFrame from all_proj
+emb_df = pd.DataFrame(all_emb, columns=[f"proj_{i}" for i in range(all_emb.shape[1])])
+
+# Make DataFrame for pos info
+pos_df = pd.DataFrame(all_pos_info, columns=["pos_info"])
+pos_df[["row", "col", "field"]] = pos_df["pos_info"].str.split("/", expand=True)
+
+# Combine embeddings and position info into one table
+full_df = pd.concat([emb_df, pos_df], axis=1)
+
+# Optional: convert row/col/field to integers
+full_df["row"] = full_df["row"].astype(int)
+full_df["col"] = full_df["col"].astype(int)
+full_df["field"] = full_df["field"].astype(int)
+
+annotations_path= '/mnt/efs/aimbl_2025/student_data/S-RM'
+
+# Load annotation CSV
+annotations = pd.read_csv(f"{annotations_path}/annotations.csv")
+annotations = annotations.rename(columns={'row_num': 'row', 'column': 'col'})
+
+# Merge 'gene' into full_df
+full_df = full_df.merge(annotations[['gene', 'col','row']], on=['row', 'col'], how='left')
+
+# Check
+full_df.info()
+
+#%%
+# import matplotlib.pyplot as plt
+# from sklearn.decomposition import PCA
+
+# # Reduce to 2D
+# pca = PCA(n_components=2)
+# proj_2d = pca.fit_transform(all_proj)
+
+# # Use the gene column for coloring
+# genes = full_df["gene"].astype(str)   # make sure it's string for grouping
+# unique_genes = genes.unique()
+# gene_to_idx = {g: i for i, g in enumerate(unique_genes)}
+# colors = [gene_to_idx[g] for g in genes]
+
+# # Plot
+# plt.figure(figsize=(10, 8))
+# scatter = plt.scatter(proj_2d[:, 0], proj_2d[:, 1], 
+#                       c=colors, cmap="tab20", alpha=0.6)
+
+# # # Legend with gene labels
+# # handles, _ = scatter.legend_elements(num=len(unique_genes))
+# # plt.legend(handles, unique_genes, title="Gene", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+# plt.xlabel("PC1")
+# plt.ylabel("PC2")
+# plt.title("PCA of Contrastive Embeddings by Gene")
+# plt.tight_layout()
+# plt.show()
+
+
+#%%
+# import umap.umap_ as umap
+# import matplotlib.pyplot as plt
+
+# # Run UMAP on projections
+# umap_model = umap.UMAP(n_components=2, random_state=57)
+# proj_2d_umap = umap_model.fit_transform(all_proj)
+
+# # Get gene labels from full_df (must match index of all_proj)
+# gene_labels = full_df["gene"].fillna("NA")  # fallback if missing
+
+# # Map each gene to an integer color
+# unique_genes = sorted(gene_labels.unique())
+# gene_to_idx = {g: i for i, g in enumerate(unique_genes)}
+# colors = gene_labels.map(gene_to_idx)
+
+# # Plot UMAP scatter
+# plt.figure(figsize=(12, 10))
+# scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+#                       c=colors, cmap="tab20", alpha=0.6)
+
+# # # Legend with gene names
+# # handles, _ = scatter.legend_elements(num=len(unique_genes))
+# # plt.legend(handles, unique_genes, title="Gene",
+# #            bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
+
+# plt.xlabel("UMAP-1")
+# plt.ylabel("UMAP-2")
+# plt.title("UMAP of Contrastive Embeddings by Gene")
+# plt.tight_layout()
+# plt.show()
+
+#%%
+#umap with only negcons
+# import umap.umap_ as umap
+# import matplotlib.pyplot as plt
+
+# # Run UMAP on projections
+# umap_model = umap.UMAP(n_components=2, random_state=57)
+# proj_2d_umap = umap_model.fit_transform(all_proj)
+
+# # Gene labels
+# gene_labels = full_df["gene"].fillna("NA")
+
+# # Build color array: grey by default, special color for negcon
+# colors = ["lightgrey"] * len(gene_labels)
+# for i, g in enumerate(gene_labels):
+#     if g.lower() == "negcon":
+#         colors[i] = "red"   # highlight negcon in red (change if you like)
+
+# # Plot
+# plt.figure(figsize=(12, 10))
+# plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+#             c=colors, alpha=0.6)
+
+# plt.xlabel("UMAP-1")
+# plt.ylabel("UMAP-2")
+# plt.title("UMAP of Contrastive Embeddings\nHighlighting negcon")
+# plt.tight_layout()
+# plt.show()
+ #%%
+
+ #pca of negcons only
+# import matplotlib.pyplot as plt
+# from sklearn.decomposition import PCA
+
+# # Run PCA
+# pca = PCA(n_components=2)
+# proj_2d = pca.fit_transform(all_proj)
+
+# # Gene labels
+# gene_labels = full_df["gene"].fillna("NA")
+
+# # Build colors: grey by default, highlight negcon
+# colors = ["lightgrey"] * len(gene_labels)
+# for i, g in enumerate(gene_labels):
+#     if g.lower() == "negcon":
+#         colors[i] = "red"   # negcon points in red
+
+# # Plot
+# plt.figure(figsize=(10, 8))
+# plt.scatter(proj_2d[:, 0], proj_2d[:, 1],
+#             c=colors, alpha=0.6)
+
+# plt.xlabel("PC1")
+# plt.ylabel("PC2")
+# plt.title("PCA of Contrastive Embeddings\nHighlighting negcon")
+# plt.tight_layout()
+# plt.show()
+#%%
+##by row
+import umap.umap_ as umap
+import matplotlib.pyplot as plt
+
+# Run UMAP
+umap_model = umap.UMAP(n_components=2, random_state=57)
+proj_2d_umap = umap_model.fit_transform(all_emb)
+
+# Use the row column for coloring
+rows = full_df["col"]
+
+plt.figure(figsize=(12, 10))
+scatter = plt.scatter(proj_2d_umap[:, 0], proj_2d_umap[:, 1],
+                      c=rows, cmap="tab20", alpha=0.7)
+
+# Add colorbar to show row values
+cbar = plt.colorbar(scatter)
+cbar.set_label("Row")
+
+plt.xlabel("UMAP-1")
+plt.ylabel("UMAP-2")
+plt.title("UMAP of Contrastive Embeddings colored by Column")
+plt.tight_layout()
+plt.show()
+
+#%%
+#%%
+#%%
+# from sklearn.manifold import TSNE
+# import matplotlib.pyplot as plt
+
+# # Run t-SNE on projections
+# tsne_model = TSNE(n_components=2, random_state=57, perplexity=30, max_iter=1000)
+# proj_2d_tsne = tsne_model.fit_transform(all_proj)
+
+# # Gene labels
+# gene_labels = full_df["gene"].fillna("NA")
+
+# # Build color array: grey by default, special color for negcon
+# colors = ["lightgrey"] * len(gene_labels)
+# for i, g in enumerate(gene_labels):
+#     if g.lower() == "negcon":
+#         colors[i] = "red"   # highlight negcon in red
+
+# # Plot
+# plt.figure(figsize=(12, 10))
+# plt.scatter(proj_2d_tsne[:, 0], proj_2d_tsne[:, 1],
+#             c=colors, alpha=0.6)
+
+# plt.xlabel("t-SNE-1")
+# plt.ylabel("t-SNE-2")
+# plt.title("t-SNE of Contrastive Embeddings\nHighlighting negcon")
+# plt.tight_layout()
+# plt.show()
+
+
+#%%
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+# Reduce to 2D
+pca = PCA(n_components=2)
+proj_2d = pca.fit_transform(all_proj)
+
+# Choose which genes to show
+genes_to_show = ["negcon", "CASP3", "AURKB", "PLK1", "KRAS", "HSP90AB1"]
+
+
+# Subset the data
+mask = full_df["gene"].str.lower().isin([g.lower() for g in genes_to_show])
+proj_subset = proj_2d[mask]
+genes_subset = full_df.loc[mask, "gene"].str.upper()
+
+# Assign colors dynamically
+unique_genes = sorted(genes_subset.unique())
+cmap = plt.get_cmap("tab10")   # tab10 has 10 distinct colors
+gene_to_color = {g: cmap(i) for i, g in enumerate(unique_genes)}
+colors = [gene_to_color[g] for g in genes_subset]
+
+# Plot
+plt.figure(figsize=(10, 8))
+plt.scatter(proj_subset[:, 0], proj_subset[:, 1],
+            c=colors, alpha=0.7)
+
+# Legend
+for g, c in gene_to_color.items():
+    plt.scatter([], [], c=c, label=g)
+
+plt.legend(title="Gene", bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("PCA of Contrastive Embeddings\n(Selected Genes Only)")
+plt.tight_layout()
+plt.show()
+
+
+
+#%%
+
+# import umap
+# from sklearn.cluster import KMeans
+# import matplotlib.pyplot as plt
+
+# # Run UMAP projection to 2D
+# umap_model = umap.UMAP(n_components=2, random_state=42)
+# proj_2d = umap_model.fit_transform(all_proj)
+
+# # Run KMeans clustering
+# k = 5
+# kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+# clusters = kmeans.fit_predict(proj_2d)
+
+# # Plot UMAP projection with clusters and legend
+# plt.figure(figsize=(10, 8))
+
+# for clust in range(k):
+#     idx = clusters == clust
+#     plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+#                 alpha=0.6, label=f"Cluster {clust}")
+
+# # Mark cluster centers
+# centers = kmeans.cluster_centers_
+# plt.scatter(centers[:, 0], centers[:, 1], 
+#             c="black", s=150, marker="X", label="Centers")
+
+# plt.xlabel("UMAP1")
+# plt.ylabel("UMAP2")
+# plt.title(f"UMAP of Contrastive Embeddings with KMeans (k={k})")
+# plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+# plt.tight_layout()
+# plt.show()
+
+# #%%
+# from collections import Counter
+
+# # keep cluster assignments
+# full_df["cluster"] = clusters
+# full_df["PC1"] = proj_2d[:,0]
+# full_df["PC2"] = proj_2d[:,1]
+
+# # filter for rows with gene == "negcon"
+# negcon_df = full_df[full_df["gene"] == "negcon"]
+
+# # count clusters for negcon rows
+# negcon_cluster_counts = Counter(negcon_df["cluster"])
+# print("Cluster distribution for 'negcon':", negcon_cluster_counts)
+# #%%
+# plt.figure(figsize=(10,8))
+# plt.scatter(proj_2d[:,0], proj_2d[:,1], c=clusters, cmap="tab10", alpha=0.3)
+# plt.scatter(negcon_df["PC1"], negcon_df["PC2"], 
+#             c="red", edgecolor="black", s=120, label="negcon")
+# plt.legend()
+# plt.title("Negcon samples highlighted on KMeans clusters")
+# plt.show()
+#%%
+import umap
+import hdbscan
+import matplotlib.pyplot as plt
+
+# Run UMAP projection to 2D
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d = umap_model.fit_transform(all_proj)
+
+# Run HDBSCAN clustering (no need to set k)
+clusterer = hdbscan.HDBSCAN(min_cluster_size=10)  # tune min_cluster_size!
+clusters = clusterer.fit_predict(proj_2d)
+
+# Plot UMAP projection with HDBSCAN clusters
+plt.figure(figsize=(10, 8))
+
+unique_clusters = sorted(set(clusters))
+for clust in unique_clusters:
+    idx = clusters == clust
+    if clust == -1:
+        # -1 is noise in HDBSCAN
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.4, c="lightgray", label="Noise")
+    else:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.6, label=f"Cluster {clust}")
+
+plt.xlabel("UMAP1")
+plt.ylabel("UMAP2")
+plt.title("UMAP of Contrastive Embeddings with HDBSCAN")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+
+
+#%%
+# add cluster labels to your dataframe
+full_df["cluster"] = clusters
+
+# group by cluster and list genes
+for clust, group in full_df.groupby("cluster"):
+    genes_in_cluster = group["gene"].unique()  # unique gene names in that cluster
+    print(f"\nCluster {clust}:")
+    print(", ".join(genes_in_cluster))
+
+#%%
+for clust, group in full_df.groupby("cluster"):
+    print(f"\nCluster {clust}:")
+    print(group["gene"].value_counts())
+#%%
+#%%
+#%%
+import umap
+import hdbscan
+import matplotlib.pyplot as plt
+
+# Run UMAP projection to 2D
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d = umap_model.fit_transform(all_proj)
+
+# Run HDBSCAN clustering
+clusterer = hdbscan.HDBSCAN(min_cluster_size=12)
+clusters = clusterer.fit_predict(proj_2d)
+
+# Attach results back to dataframe
+full_df["UMAP1"] = proj_2d[:, 0]
+full_df["UMAP2"] = proj_2d[:, 1]
+full_df["cluster"] = clusters
+
+# Plot UMAP projection without noise cluster
+plt.figure(figsize=(10, 8))
+
+unique_clusters = sorted(set(clusters))
+for clust in unique_clusters:
+    if clust == -1:
+        continue  # skip noise
+    idx = clusters == clust
+    plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                alpha=0.6, label=f"Cluster {clust}")
+
+# Highlight negcon samples
+negcon_df = full_df[full_df["gene"] == "negcon"]
+plt.scatter(negcon_df["UMAP1"], negcon_df["UMAP2"], 
+            c="red", edgecolor="black", s=120, marker="o", label="negcon")
+
+plt.xlabel("UMAP1")
+plt.ylabel("UMAP2")
+plt.title("UMAP of Contrastive Embeddings with HDBSCAN (negcon highlighted)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+#%%
+# total count of negcon rows
+num_negcon = (full_df["gene"] == "negcon").sum()
+print("Number of negcon rows:", num_negcon)
+#%%
+# total number of negcon rows
+num_negcon = (full_df["gene"] == "negcon").sum()
+print("Total number of negcon rows:", num_negcon)
+
+# number of negcon rows in each cluster
+negcon_counts_by_cluster = full_df.loc[full_df["gene"] == "negcon", "cluster"].value_counts()
+print("\nNegcon rows per cluster:")
+print(negcon_counts_by_cluster)
+#%%
+# total number of negcon rows
+num_negcon = (full_df["gene"] == "negcon").sum()
+print("Total number of negcon rows:", num_negcon)
+
+# counts of negcon rows per cluster
+negcon_counts_by_cluster = (
+    full_df.loc[full_df["gene"] == "negcon", "cluster"]
+    .value_counts()
+    .sort_index()
+)
+
+# add percentages
+negcon_percentages = (negcon_counts_by_cluster / num_negcon * 100).round(2)
+
+# combine into a table
+negcon_summary = (
+    pd.DataFrame({
+        "count": negcon_counts_by_cluster,
+        "percentage": negcon_percentages
+    })
+)
+
+print("\nNegcon rows per cluster:")
+print(negcon_summary)
+#%%
+## this is the one
+import umap
+import hdbscan
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+
+# Run UMAP projection to 2D
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d = umap_model.fit_transform(all_proj)
+
+# Run HDBSCAN clustering
+clusterer = hdbscan.HDBSCAN(min_cluster_size=25)
+clusters = clusterer.fit_predict(proj_2d)
+
+# Filter out noise points (-1) for metrics
+mask = clusters != -1
+proj_no_noise = proj_2d[mask]
+labels_no_noise = clusters[mask]
+
+if len(set(labels_no_noise)) > 1:  # need at least 2 clusters
+    sil_score = silhouette_score(proj_no_noise, labels_no_noise)
+    ch_score = calinski_harabasz_score(proj_no_noise, labels_no_noise)
+    db_score = davies_bouldin_score(proj_no_noise, labels_no_noise)
+
+    print(f"Silhouette Score: {sil_score:.3f}")
+    print(f"Calinski-Harabasz Index: {ch_score:.3f}")
+    print(f"Davies-Bouldin Index: {db_score:.3f}")
+else:
+    print("Not enough clusters (after removing noise) to calculate metrics.")
+
+# Plot UMAP projection with HDBSCAN clusters
+plt.figure(figsize=(10, 8))
+unique_clusters = sorted(set(clusters))
+
+for clust in unique_clusters:
+    idx = clusters == clust
+    if clust == -1:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.4, c="lightgray", label="Noise")
+    else:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.6, label=f"Cluster {clust}")
+
+plt.xlabel("UMAP1")
+plt.ylabel("UMAP2")
+plt.title("UMAP of Contrastive Embeddings with HDBSCAN")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+#%%
+import pandas as pd
+
+# Make sure clusters are attached to full_df
+full_df["cluster"] = clusters
+
+# Filter out noise if desired
+df_no_noise = full_df[full_df["cluster"] != -1]
+
+# Total number of negcon points
+total_negcon = (df_no_noise["gene"].str.lower() == "negcon").sum()
+
+# Count negcon points per cluster
+negcon_counts = (
+    df_no_noise[df_no_noise["gene"].str.lower() == "negcon"]["cluster"]
+    .value_counts()
+    .sort_index()
+)
+
+# Compute percentages
+negcon_percentages = (negcon_counts / total_negcon * 100).round(2)
+
+# Combine counts and percentages into a table
+negcon_summary = pd.DataFrame({
+    "count": negcon_counts,
+    "percentage": negcon_percentages
+})
+
+print("NegCon distribution per cluster:")
+print(negcon_summary)
+
+
+# %%
+import pandas as pd
+
+# Attach cluster labels back to your dataframe
+full_df["cluster"] = clusters
+
+# Drop noise (-1) if you want
+df_no_noise = full_df[full_df["cluster"] != -1]
+
+# Count negcon per cluster
+negcon_counts = df_no_noise[df_no_noise["gene"] == "negcon"]["cluster"].value_counts()
+print("Negcon counts per cluster:")
+print(negcon_counts)
+#%%
+contingency = pd.crosstab(
+    df_no_noise["gene"] == "negcon",
+    df_no_noise["cluster"]
+)
+print(contingency)
+
+#%%
+from scipy.stats import chi2_contingency
+
+chi2, p, dof, expected = chi2_contingency(contingency)
+print(f"Chi-square: {chi2:.3f}, p-value: {p:.3e}")
+#%%
+# total number of negcon rows
+num_negcon = (full_df["gene"] == "negcon").sum()
+print("Total number of negcon rows:", num_negcon)
+
+# counts of negcon rows per cluster
+negcon_counts_by_cluster = (
+    full_df.loc[full_df["gene"] == "negcon", "cluster"]
+    .value_counts()
+    .sort_index()
+)
+
+# add percentages
+negcon_percentages = (negcon_counts_by_cluster / num_negcon * 100).round(2)
+
+# combine into a table
+negcon_summary = (
+    pd.DataFrame({
+        "count": negcon_counts_by_cluster,
+        "percentage": negcon_percentages
+    })
+)
+
+print("\nNegcon rows per cluster:")
+print(negcon_summary)
+#%%
+import umap
+import hdbscan
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+
+# Run UMAP projection to 2D
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d = umap_model.fit_transform(all_proj)
+
+# Run HDBSCAN clustering
+clusterer = hdbscan.HDBSCAN(min_cluster_size=25)
+clusters = clusterer.fit_predict(proj_2d)
+
+# Attach cluster and UMAP coordinates to dataframe
+full_df["UMAP1"] = proj_2d[:, 0]
+full_df["UMAP2"] = proj_2d[:, 1]
+full_df["cluster"] = clusters
+
+# Filter out noise points for metrics
+mask = clusters != -1
+proj_no_noise = proj_2d[mask]
+labels_no_noise = clusters[mask]
+
+if len(set(labels_no_noise)) > 1:
+    sil_score = silhouette_score(proj_no_noise, labels_no_noise)
+    ch_score = calinski_harabasz_score(proj_no_noise, labels_no_noise)
+    db_score = davies_bouldin_score(proj_no_noise, labels_no_noise)
+    print(f"Silhouette Score: {sil_score:.3f}")
+    print(f"Calinski-Harabasz Index: {ch_score:.3f}")
+    print(f"Davies-Bouldin Index: {db_score:.3f}")
+else:
+    print("Not enough clusters (after removing noise) to calculate metrics.")
+
+# Boolean mask for negcon
+negcon_mask = full_df["gene"].str.lower() == "negcon"
+
+# Plot UMAP projection with HDBSCAN clusters and negcon highlighted
+plt.figure(figsize=(10, 8))
+unique_clusters = sorted(set(clusters))
+
+for clust in unique_clusters:
+    idx = clusters == clust
+    if clust == -1:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.4, c="lightgray", label="Noise")
+    else:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.6, label=f"Cluster {clust}")
+
+# Overlay negcon points
+plt.scatter(full_df.loc[negcon_mask, "UMAP1"],
+            full_df.loc[negcon_mask, "UMAP2"],
+            facecolors='none', edgecolors='red', s=100, linewidths=1.5, label='NegCon')
+
+plt.xlabel("UMAP1")
+plt.ylabel("UMAP2")
+plt.title("UMAP of Contrastive Embeddings with HDBSCAN (NegCon Highlighted)")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+#%%
+import umap
+import hdbscan
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+
+# -----------------------------
+# 1. Run UMAP projection to 2D using embeddings
+# -----------------------------
+umap_model = umap.UMAP(n_components=2, random_state=42)
+proj_2d = umap_model.fit_transform(all_emb)  # <- changed from all_proj to all_emb
+
+# -----------------------------
+# 2. Run HDBSCAN clustering on embeddings
+# -----------------------------
+clusterer = hdbscan.HDBSCAN(min_cluster_size=15)
+clusters = clusterer.fit_predict(all_emb)  # <- cluster on high-dimensional embeddings
+
+# -----------------------------
+# 3. Compute clustering metrics (exclude noise)
+# -----------------------------
+mask = clusters != -1
+emb_no_noise = all_emb[mask]
+labels_no_noise = clusters[mask]
+
+if len(set(labels_no_noise)) > 1:
+    sil_score = silhouette_score(emb_no_noise, labels_no_noise)
+    ch_score = calinski_harabasz_score(emb_no_noise, labels_no_noise)
+    db_score = davies_bouldin_score(emb_no_noise, labels_no_noise)
+
+    print(f"Silhouette Score: {sil_score:.3f}")
+    print(f"Calinski-Harabasz Index: {ch_score:.3f}")
+    print(f"Davies-Bouldin Index: {db_score:.3f}")
+else:
+    print("Not enough clusters (after removing noise) to calculate metrics.")
+
+# -----------------------------
+# 4. Plot UMAP projection with HDBSCAN clusters
+# -----------------------------
+plt.figure(figsize=(10, 8))
+unique_clusters = sorted(set(clusters))
+
+for clust in unique_clusters:
+    idx = clusters == clust
+    if clust == -1:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.4, c="lightgray", label="Noise")
+    else:
+        plt.scatter(proj_2d[idx, 0], proj_2d[idx, 1], 
+                    alpha=0.6, label=f"Cluster {clust}")
+
+plt.xlabel("UMAP1")
+plt.ylabel("UMAP2")
+plt.title("UMAP of Embeddings with HDBSCAN")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 5. Attach clusters back to dataframe (optional)
+# -----------------------------
+full_df["cluster"] = clusters
+
+
+#%%

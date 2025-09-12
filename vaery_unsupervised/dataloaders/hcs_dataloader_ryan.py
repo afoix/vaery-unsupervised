@@ -9,11 +9,12 @@ from monai.data import set_track_meta
 from monai.transforms import Compose, ToTensord
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
-from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop
+from monai.transforms import Compose, RandSpatialCrop, RandRotate, RandWeightedCrop, CenterSpatialCrop, NormalizeIntensity
+from monai.transforms import Compose, RandAffine, RandGaussianNoise, RandAdjustContrast, RandScaleIntensity
 
 
 class ContrastiveHCSDataset(Dataset):
-    def __init__(self, positions: list[Position], source_channel_names: list[str],weight_channel_name: str = 'nuclei', crop_size: tuple[int, int]=(256, 256), 
+    def __init__(self, positions: list[Position], pos_infos: list[str], source_channel_names: list[str],weight_channel_name: str = 'nuclei', crop_size: tuple[int, int]=(256, 256), 
                  crops_per_position: int=4, normalization_transform: Compose| list[Callable]=[], anchor_augmentations: Callable| Compose=[], positive_augmentations: Compose| Callable=[]):
         """
         Parameters:
@@ -26,6 +27,7 @@ class ContrastiveHCSDataset(Dataset):
             positive_augmentations: MONAI transform for positive augmentations (optional)
         """
         self.positions = positions
+        self.pos_infos = pos_infos
         self.source_channel_names = source_channel_names
         self.weight_channel_name = weight_channel_name
         self.crop_size = crop_size
@@ -42,41 +44,69 @@ class ContrastiveHCSDataset(Dataset):
         # make mapping between the crop_per_position and the actual index in the dataset
         # repeat the number of positions by the number of crops per position
         self.all_positions = [pos for pos in positions for _ in range(self.crops_per_position)]
+        self.all_pos_infos = [info for info in pos_infos for _ in range(self.crops_per_position)]
 
     def __getitem__(self, index):
 
         #TODO open the 
         # List of iohub Position objects
         position = self.all_positions[index]
+        pos_info = self.all_pos_infos[index]
         channel_names = position.channel_names
         source_channel_indices = [position.channel_names.index(ch) for ch in self.source_channel_names]
         # mapping of the weighted_channel_index to the source_channel_indices
 
         #TODO open the position
-        img_cyx =position[0].oindex[0,source_channel_indices,0]
+        img_cyx = position[0].oindex[0, source_channel_indices, 0]
         weight_channel_index = self.source_channel_names.index('nuclei')
         weight_img = img_cyx[weight_channel_index:weight_channel_index+1]  # Shape: (1, Y, X)
+        random_weighted_crop = Compose([
+            # RandRotate(
+            #     range_x=5,
+            #     prob=0.1, keep_size=True,
+            #     mode="bilinear",
+            #     padding_mode="zeros"),
+            RandWeightedCrop(
+                spatial_size=(self.crop_size[0]*1.41,self.crop_size[1]*1.41),
+                weight_map=weight_img,  # Remove channel dim, now (Y, X)
+                num_samples=1),
+            # RandAffine(
+            #     scale_range =[0.0, 0.05,0.05],
+            #     shear_range = [0.0,0.005,0.005],
+            #     prob = 0.1)
+            # RandGaussianNoise(
+            #     mean =0.0,
+            #     std=0.02,
+            #     prob=0.05)
+                ])
+
+
+
         
-        random_weighted_crop = RandWeightedCrop(
-            spatial_size=(self.crop_size[0]*1.41, self.crop_size[1]*1.41),  # (H, W) for 2D spatial crop
-            weight_map=weight_img,  # Remove channel dim, now (Y, X)
-            num_samples=1
-        )
-        crop_img = random_weighted_crop(img_cyx)
+        # random_weighted_crop = RandWeightedCrop(
+        #     spatial_size=(self.crop_size[0]*1.41, self.crop_size[1]*1.41),  # (H, W) for 2D spatial crop
+        #     weight_map=weight_img,  # Remove channel dim, now (Y, X)
+        #     num_samples=1
+        # )
+        crop_img = random_weighted_crop(img_cyx)[0]
         
-        #TODO apply the transform and the normalizations
-        #compose the the monai transforms
+        max_per = torch.quantile(crop_img, 0.95)
+        min_per = torch.quantile(crop_img, 0.05)
 
+        norm_img = (crop_img - min_per) / (max_per - min_per)
 
-        anchor = self.anchor_augmentations(crop_img)
-        positive = self.positive_augmentations(anchor)
+        if torch.isnan(norm_img).any():
+            norm_img = torch.nan_to_num(norm_img, nan=0.0, posinf=1.0, neginf=0.0)
 
-
+        positive = self.positive_augmentations(norm_img)
+        anchor = self.anchor_augmentations(norm_img)
+       
         #TODO return the anchor and positive
         return {
             "anchor": anchor,
             "positive": positive,
-            # "fov_id": position.name #TODO check if we need the fov_id
+            "pos_info": pos_info,
+            
         }
     
     def __len__(self):
@@ -84,10 +114,12 @@ class ContrastiveHCSDataset(Dataset):
 
 
 class HCSDataModule(pl.LightningDataModule):
-    def __init__(self, ome_zarr_path, source_channel_names, weight_channel_name, crop_size=(256, 256),
-                 crops_per_position=4, batch_size=32, num_workers=4, 
-                 split_ratio=0.8, random_state=42, 
-                 normalization_transform=[], augmentations=[]):
+    def __init__(
+            self, ome_zarr_path, source_channel_names, weight_channel_name, crop_size=(256, 256),
+            crops_per_position=4, batch_size=32, num_workers=4, 
+            split_ratio=0.8, random_state=42, 
+            normalization_transform=[], augmentations=[]
+        ):
         super().__init__()
         self.ome_zarr_path = ome_zarr_path
         self.source_channel_names = source_channel_names
@@ -113,9 +145,12 @@ class HCSDataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         # TODO:
         plate = open_ome_zarr(self.ome_zarr_path, mode="r")
-        positions = [pos for _, pos in plate.positions()]
+        pos_list = [(pos_info, pos) for pos_info, pos in plate.positions()]
+        positions = [pos for pos_info, pos in pos_list]
+        pos_infos = [pos_info for pos_info, pos in pos_list]
         shuffled_indices = self._set_fit_global_state(len(positions))
         positions = list(positions[i] for i in shuffled_indices)
+        pos_infos = list(pos_infos[i] for i in shuffled_indices)
         
         num_train_fovs = int(len(positions) * self.split_ratio)
 
@@ -123,26 +158,63 @@ class HCSDataModule(pl.LightningDataModule):
         #TODO ContrastiveHCSDataset extra arguments that are needed
         #TODO check that we need how many crops per positions
         self.train_dataset = ContrastiveHCSDataset(
-            positions= positions[:num_train_fovs],
+            positions=positions[:num_train_fovs],
+            pos_infos=pos_infos[:num_train_fovs],
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = self.normalization_transform,
-            anchor_augmentations= [],
-            # positive_augmentations= [],
+            anchor_augmentations= Compose([CenterSpatialCrop(roi_size=self.crop_size)]),
             weight_channel_name= self.weight_channel_name,
             positive_augmentations= Compose([
-                RandRotate(range_x=30, prob=1.0, keep_size=True, mode="bilinear", padding_mode="zeros"),
-                CenterSpatialCrop(roi_size=self.crop_size),
-            ]),
+                RandRotate(
+                    range_x=np.pi,# update full rotation
+                    prob=0.8,
+                    keep_size=True,
+                    mode="bilinear",
+                    padding_mode="zeros"),
+                CenterSpatialCrop(
+                    roi_size=self.crop_size),
+                # RandAffine(
+                #     scale_range =[0.0, 0.05,0.05],
+                #     shear_range = [0.0,0.005,0.005],
+                #     prob = 0.8),
+                RandScaleIntensity(factors = 0.5, prob=0.5),
+                RandGaussianNoise(
+                    mean =0.0,
+                    std=0.05,
+                    prob=0.8),
+                RandAdjustContrast(gamma = (0.9,1.1),prob=0.5),
+            ])
         )
         self.val_dataset = ContrastiveHCSDataset(
             positions = positions[num_train_fovs:],
+            pos_infos= pos_infos[num_train_fovs:],
             crops_per_position=self.crops_per_position,
             source_channel_names= ['mito','er','nuclei'],
             normalization_transform = [],
-            anchor_augmentations= [],
-            positive_augmentations= [],
+            anchor_augmentations= Compose([CenterSpatialCrop(roi_size=self.crop_size)]),
+            positive_augmentations= Compose([
+                RandRotate(
+                    range_x=np.pi,
+                    prob=0.8,
+                    keep_size=True,
+                    mode="bilinear",
+                    padding_mode="zeros"),
+                CenterSpatialCrop(
+                    roi_size=self.crop_size),
+                # RandAffine(
+                #     scale_range =[0.0, 0.3,0.3],
+                #     shear_range = [0.0,0.01,0.01],
+                #     prob = 0.8),
+                RandScaleIntensity(factors = 0.5, prob=0.5),
+                RandGaussianNoise(
+                    mean =0.0,
+                    std=0.05,
+                    prob=0.8),
+                RandAdjustContrast(gamma = (0.9,1.1),prob=0.5),
+            ]),
             weight_channel_name= self.weight_channel_name,
+            
         )
         
     def train_dataloader(self):
