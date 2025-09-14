@@ -1,10 +1,11 @@
 # General paths for the project
 paths:
   head_path: "/mnt/efs/aimbl_2025/student_data/S-GL/"
-  metadata_balanced_path: "2025-09-03_lDE20_Final_balanced_30tr-per-gene.pkl"
+  metadata_filename: "2025-09-03_lDE20_Final_balanced_30tr-per-gene.pkl"
   data_path: "Ecoli_lDE20_Exps-0-1/"
   logs_headpath: "/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive_custom_resnet/"
-  
+  embeddings_directory: '/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/embeddings_custom_resnet_v1/'
+
 # Model hyperparameters for SmallObjectResNet10Encoder
 encoder:
   in_channels: 1
@@ -25,9 +26,10 @@ contrastive_module:
 # DataModule configuration
 data_module:
   split_ratio: 0.8
-  batch_size: 384  # 256 + 128
+  batch_size: 16 #4096 #2048 # For training: 384  # 256 + 128
   num_workers: 8
   prefetch_factor: 2
+  # prediction_mode: "batch" # NEW: 'single' or 'batch'
 
 # MONAI transforms for data augmentation
 transforms:
