@@ -1,9 +1,8 @@
-import warnings
+# This is the model in which I ran 500 genes with success. Created with Gemini's help.
 from typing import Literal
 import torch
 import torch.nn as nn
 from torch import Tensor
-from monai.networks.nets import ResNetFeatures
 
 def projection_mlp(
         in_dims: int,

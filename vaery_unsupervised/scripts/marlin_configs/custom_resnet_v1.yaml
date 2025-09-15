@@ -17,11 +17,26 @@ encoder:
   mlp_hidden_dims: 64
   projection_dim: 32
 
+# New key to specify the encoder module and class
+encoder_module:
+  path: "vaery_unsupervised.networks.marlin_custom_resnet"
+  class: "SmallObjectResNet10Encoder"
+
+# Key to specify the model module and class
+model_module:
+  path: "vaery_unsupervised.networks.marlin_contrastive"
+  class: "ContrastiveModule"
+
 # Hyperparameters for the ContrastiveModule and training
 contrastive_module:
   loss:
     temperature: 0.07
   lr: 0.001
+
+# Key to specify the datamodule
+data_module:
+  path: "vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader"
+  class: "MarlinDataModule"
 
 # DataModule configuration
 data_module:

@@ -1,3 +1,4 @@
+# This is a much smaller model than the one in marlin_resnet.py. It uses rectangular kernel sizes, and it does not use square images.
 from typing import Literal
 import torch
 import torch.nn as nn
@@ -20,7 +21,6 @@ from typing import Literal, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
-
 
 # ---------------------------
 # Utilities

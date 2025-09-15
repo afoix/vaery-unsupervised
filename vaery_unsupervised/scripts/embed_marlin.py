@@ -8,10 +8,11 @@ import argparse
 import torch
 import pickle
 import numpy as np
+import importlib
 
 from vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader import MarlinDataModule
 from vaery_unsupervised.networks.marlin_contrastive import ContrastiveModule
-from vaery_unsupervised.networks.marlin_custom_resnet import SmallObjectResNet10Encoder
+# from vaery_unsupervised.networks.marlin_custom_resnet import SmallObjectResNet10Encoder
 from pytorch_metric_learning.losses import NTXentLoss, SelfSupervisedLoss
 from monai.transforms import (
     Compose,
@@ -43,6 +44,22 @@ def get_transforms(transforms_config):
         else:
             raise ValueError(f"Unknown transform: {name}")
     return Compose(transform_list)
+
+def perform_batch_prediction_and_saving(
+    model: L.LightningModule,
+    dataloader: torch.utils.data.DataLoader,
+    embeddings_directory: Path,
+    metadata_path: Path,
+):
+        
+    with torch.no_grad():
+        for i, batch in enumerate(dataloader):
+            print(f'Processing batch {i}')
+            embeddings_batch = model(batch['anchor'].to('cuda' if torch.cuda.is_available() else 'cpu')) # embeddings_batch is a tuple (embeddings, projections)
+            filename = embeddings_directory / f'embeddings_batch_{i:06d}.pkl'
+            with open(filename, "wb") as f:
+                pickle.dump({'id': batch['id'], 'embeddings': embeddings_batch}, f)
+    print("Batch-wise prediction and saving complete.")
 
 def count_total_embeddings_in_files(embedding_files, metadata_length):
     """
@@ -115,9 +132,17 @@ def main(config_path, checkpoint_path, mode):
     metadata_path = head_path / paths_config['metadata_filename']
     data_path = head_path / paths_config['data_path']
 
+    # Dynamically import the encoder class from the specified module
+    encoder_module_config = config['encoder_module']
+    encoder_module = importlib.import_module(encoder_module_config['path'])
+    encoder_class = getattr(encoder_module, encoder_module_config['class'])
+
+
     # Instantiate the encoder and model from config
     encoder_params = config['encoder']
-    marlin_encoder = SmallObjectResNet10Encoder(**encoder_params)
+
+    marlin_encoder = encoder_class(**encoder_params)
+    # marlin_encoder = SmallObjectResNet10Encoder(**encoder_params)
 
     contrastive_config = config['contrastive_module']
     loss = SelfSupervisedLoss(NTXentLoss(temperature=contrastive_config['loss']['temperature']))
@@ -131,9 +156,15 @@ def main(config_path, checkpoint_path, mode):
     )
     model.eval()
 
+    # Prepare data module
+    data_module_config = config['data_module']
+    data_module_code = importlib.import_module(data_module_config['path'])
+    data_module_class = getattr(data_module_code, data_module_config['class'])
+
     transforms = get_transforms(config['transforms'])
     data_module_config = config['data_module']
-    data_module = MarlinDataModule(
+    # data_module = MarlinDataModule(
+    data_module = data_module_class(
         data_path=data_path,
         metadata_path=metadata_path,
         split_ratio=data_module_config['split_ratio'],
@@ -179,15 +210,12 @@ def main(config_path, checkpoint_path, mode):
     elif mode == 'batch':
         print('batch mode')
         dataloader = data_module.predict_dataloader()
-        with torch.no_grad():
-            for i, batch in enumerate(dataloader):
-                print(f'Processing batch {i}')
-                embeddings_batch = model(batch['anchor'].to('cuda' if torch.cuda.is_available() else 'cpu')) # embeddings_batch is a tuple (embeddings, projections)
-                filename = embeddings_directory / f'embeddings_batch_{i:06d}.pkl'
-                print(f'Saving embeddings for batch {i} to {filename}')
-                with open(filename, "wb") as f:
-                    pickle.dump({'id': batch['id'], 'embeddings': embeddings_batch}, f)
-        
+        perform_batch_prediction_and_saving(
+            model=model,
+            dataloader=dataloader,
+            embeddings_directory=embeddings_directory,
+            metadata_path=metadata_path,
+        )
         # NOTE: this part requires enough memory to hold the full matrices
         embedding_matrix, projection_matrix, metadata = generate_embedding_and_projection_matrices(embeddings_directory, metadata_path)
         np.save(embeddings_directory / "embedding_matrix.npy", embedding_matrix)
