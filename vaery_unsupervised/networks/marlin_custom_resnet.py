@@ -32,7 +32,6 @@ def _norm2d(num_channels: int, kind: Literal["group", "batch"] = "group", groups
     # clamp groups to channels
     return nn.GroupNorm(min(groups, num_channels), num_channels)
 
-
 class DropPath(nn.Module):
     """Stochastic depth. Drop residual path at rate p (per sample)."""
     def __init__(self, p: float = 0.0):

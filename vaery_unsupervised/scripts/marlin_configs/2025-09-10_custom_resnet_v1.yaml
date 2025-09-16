@@ -4,7 +4,8 @@ paths:
   metadata_filename: "2025-09-03_lDE20_Final_balanced_30tr-per-gene.pkl"
   data_path: "Ecoli_lDE20_Exps-0-1/"
   logs_headpath: "/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive_custom_resnet/"
-  embeddings_directory: '/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/embeddings_custom_resnet_v1/'
+  checkpoint_path: "/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive_custom_resnet/version_1/checkpoints/last.ckpt"
+  embeddings_directory: '/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/2025-09-10_embeddings_custom_resnet_v1/'
 
 # Model hyperparameters for SmallObjectResNet10Encoder
 encoder:
@@ -33,15 +34,12 @@ contrastive_module:
     temperature: 0.07
   lr: 0.001
 
-# Key to specify the datamodule
-data_module:
-  path: "vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader"
-  class: "MarlinDataModule"
-
 # DataModule configuration
 data_module:
+  path: "vaery_unsupervised.dataloaders.marlin_dataloader.marlin_dataloader" 
+  class: "MarlinDataModule"
   split_ratio: 0.8
-  batch_size: 16 #4096 #2048 # For training: 384  # 256 + 128
+  batch_size: 4096 #4096 #2048 # For training: 384  # 256 + 128
   num_workers: 8
   prefetch_factor: 2
   # prediction_mode: "batch" # NEW: 'single' or 'batch'
