@@ -194,16 +194,16 @@ def main(config_path, mode):
             max_epochs=config['trainer']['max_epochs'],
             fast_dev_run=config['trainer']['fast_dev_run'],
         )
-        embeddings_list = trainer.predict(
+        embeddings = trainer.predict(
             model=model,
             dataloaders=data_module.predict_dataloader(),
             return_predictions=True
         )
         
         # Concatenate all embeddings from the list of tensors
-        embeddings = torch.cat(embeddings_list, dim=0).cpu().numpy()
+        # embeddings = torch.cat(embeddings_list, dim=0).cpu().numpy()
         
-        print(f"Prediction complete. Generated {embeddings.shape[0]} embeddings of dimension {embeddings.shape[1]}.")
+        # print(f"Prediction complete. Generated {embeddings.shape[0]} embeddings of dimension {embeddings.shape[1]}.")
     
         embeddings_path = embeddings_directory / 'embeddings_single.pkl'
         print(f"Saving embeddings to {embeddings_path}")
@@ -234,12 +234,12 @@ if __name__ == "__main__":
     main(args.config, args.mode)
 
 #%%
-config_path = Path("/home/S-GL/vaery-unsupervised/vaery_unsupervised/scripts/marlin_configs/resnet_v21_500-genes_30-grnas-per-gene.yaml")
-config = load_config(config_path)
-paths_config = config['paths']
-head_path = Path(paths_config['head_path'])
-embeddings_directory = head_path / paths_config['embeddings_directory']
-metadata_path = head_path / paths_config['metadata_filename']
+# config_path = Path("/home/S-GL/vaery-unsupervised/vaery_unsupervised/scripts/marlin_configs/resnet_v21_500-genes_30-grnas-per-gene.yaml")
+# config = load_config(config_path)
+# paths_config = config['paths']
+# head_path = Path(paths_config['head_path'])
+# embeddings_directory = head_path / paths_config['embeddings_directory']
+# metadata_path = head_path / paths_config['metadata_filename']
 # embedding_matrix, projection_matrix, metadata = generate_embedding_and_projection_matrices(embeddings_directory, metadata_path)
 
 # #%%
@@ -247,17 +247,23 @@ metadata_path = head_path / paths_config['metadata_filename']
 # np.save(embeddings_directory / "projection_matrix.npy", projection_matrix)
 # metadata.to_pickle(embeddings_directory / "metadata_with_indices.pkl")
 
-with open(embeddings_directory / "embeddings_batch_000000.pkl", 'rb') as f:
-    test = pickle.load(f)
-    emb_test = test['embeddings'][0].cpu().numpy()
-    proj_test = test['embeddings'][1].cpu().numpy()
+# with open(embeddings_directory / "embeddings_batch_000000.pkl", 'rb') as f:
+#     test = pickle.load(f)
+#     emb_test = test['embeddings'][0].cpu().numpy()
+#     proj_test = test['embeddings'][1].cpu().numpy()
 
-embeddings_dir_before = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings_30tr-per-gene_all-t_v21/')
-with open(embeddings_dir_before / "embeddings_batch_000000.pkl", 'rb') as f:
-    embs = pickle.load(f)
-    emb = embs['embeddings'][0].cpu().numpy()
-    proj = embs['embeddings'][1].cpu().numpy()
- 
+# embeddings_dir_before = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings_30tr-per-gene_all-t_v21/')
+# with open(embeddings_dir_before / "embeddings_batch_000000.pkl", 'rb') as f:
+#     embs = pickle.load(f)
+#     emb = embs['embeddings'][0].cpu().numpy()
+#     proj = embs['embeddings'][1].cpu().numpy()
+
+#%%
+# embeddings_dir_before = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings_4gene_allt_v1.pkl')
+# with open(embeddings_dir_before, 'rb') as f:
+#     embs = pickle.load(f)
+# len(embs)
+
 # %%
 # %load_ext autoreload
 # %autoreload 2
