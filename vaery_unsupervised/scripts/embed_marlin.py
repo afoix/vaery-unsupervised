@@ -210,6 +210,20 @@ def main(config_path, mode):
         with open(embeddings_path, 'wb') as f:
             pickle.dump(embeddings, f)
 
+        metadata = pd.read_pickle(metadata_path)
+        embedding_matrix = np.zeros((len(metadata), embeddings[0][0].shape[1]))
+        projection_matrix = np.zeros((len(metadata), embeddings[0][1].shape[1]))
+
+        current_datapoint = 0
+        for batch in embeddings:
+            embeddings_batch, projection_batch = batch
+            len_batch = embeddings_batch.shape[0]
+            embedding_matrix[current_datapoint:current_datapoint + len_batch] = embeddings_batch.numpy()
+            projection_matrix[current_datapoint:current_datapoint + len_batch] = projection_batch.numpy()
+            current_datapoint += len_batch
+        np.save(embeddings_directory / "embedding_matrix.npy", embedding_matrix)
+        np.save(embeddings_directory / "projection_matrix.npy", projection_matrix)
+
     elif mode == 'batch':
         print('batch mode')
         dataloader = data_module.predict_dataloader()
@@ -259,10 +273,40 @@ if __name__ == "__main__":
 #     proj = embs['embeddings'][1].cpu().numpy()
 
 #%%
-# embeddings_dir_before = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings_4gene_allt_v1.pkl')
-# with open(embeddings_dir_before, 'rb') as f:
-#     embs = pickle.load(f)
-# len(embs)
+embeddings_dir_before = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings_4gene_allt_v1.pkl')
+with open(embeddings_dir_before, 'rb') as f:
+    embeddings = pickle.load(f)
+len(embeddings)
+
+#%%
+metadata = pd.read_pickle('/mnt/efs/aimbl_2025/student_data/S-GL/2025-08-31_lDE20_Final_Barcodes_df_Merged_Clustering_expanded_select_grnas_allT.pickle')
+
+#%% Get total length
+total_size = 0
+for emb in embeddings:
+    total_size += emb[0].shape[0]
+print(total_size, len(metadata))
+
+
+#%%
+embedding_matrix = np.zeros((len(metadata), embeddings[0][0].shape[1]))
+projection_matrix = np.zeros((len(metadata), embeddings[0][1].shape[1]))
+
+current_datapoint = 0
+for batch in embeddings:
+    embeddings_batch, projection_batch = batch
+    len_batch = embeddings_batch.shape[0]
+    embedding_matrix[current_datapoint:current_datapoint + len_batch] = embeddings_batch.numpy()
+    projection_matrix[current_datapoint:current_datapoint + len_batch] = projection_batch.numpy()
+    current_datapoint += len_batch
+
+#%% D
+
+#%%
+embeddings_dir_after = Path('/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/2025-09-03_embeddings_resnet_v7/')
+with open(embeddings_dir_after / "embeddings_single.pkl", 'rb') as f:
+    embs2 = pickle.load(f)
+len(embs2)
 
 # %%
 # %load_ext autoreload

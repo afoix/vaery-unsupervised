@@ -5,7 +5,7 @@ paths:
   data_path: "Ecoli_lDE20_Exps-0-1/"
   logs_headpath: "/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive/"
   checkpoint_path: "/mnt/efs/aimbl_2025/student_data/S-GL/tb_logs/marlin_contrastive/version_7/checkpoints/last.ckpt"
-  embeddings_directory: '/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/2025-09-03_embeddings_resnet_v7/'
+  embeddings_directory: '/mnt/efs/aimbl_2025/student_data/S-GL/embeddings/2025-09-03_embeddings_resnet_v7_768/'
 
 # Model hyperparameters for SmallObjectResNet10Encoder
 encoder:
@@ -13,8 +13,8 @@ encoder:
   in_channels: 1
   spatial_dims: 2
   embedding_dim: 512
-  mlp_hidden_dims: 256
-  projection_dim: 32
+  mlp_hidden_dims: 256 #256
+  projection_dim: 32 
   pretrained: false
   # widths: [32, 64, 128, 256]
   # feature_stage: "layer4"
